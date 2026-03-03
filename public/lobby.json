@@ -1,0 +1,56 @@
+{
+    "id": 1,
+    "name": "Texas Hold'em",
+    "tables": [
+        {
+            "id": "10",
+            "name": "Ralph's Texas Hold'em",
+            "game": "Texas Hold'em",
+            "buyin": "$1000",
+            "blinds": "$10/$20",
+            "max_players": "4",
+            "current_players": "4",
+            "state": "playing"
+        },
+        {
+            "id": "20",
+            "name": "George's Texas Hold'em",
+            "game": "Texas Hold'em",
+            "buyin": "$2000",
+            "blinds": "$20/$40",
+            "max_players": "2",
+            "current_players": "2",
+            "state": "playing"
+        },
+        {
+            "id": "30",
+            "name": "Caroline's Texas Hold'em",
+            "game": "Texas Hold'em",
+            "buyin": "$1000",
+            "blinds": "$10/$20",
+            "max_players": "6",
+            "current_players": "6",
+            "state": "playing"
+        },
+        {
+            "id": "40",
+            "name": "James's Texas Hold'em",
+            "game": "Texas Hold'em",
+            "buyin": "$1000",
+            "blinds": "$10/$20",
+            "max_players": "6",
+            "current_players": "4",
+            "state": "seating"
+        },
+        {
+            "id": "50",
+            "name": "Alice's Texas Hold'em",
+            "game": "Texas Hold'em",
+            "buyin": "$1000",
+            "blinds": "$10/$20",
+            "max_players": "4",
+            "current_players": "1",
+            "state": "seating"
+        }
+    ]
+}

@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* :root {
+  --background: #ffffff;
+  --foreground: #171717;
+} */
+
+:root {
+  background-color: #020617; /* Matches slate-950 */
+  color: white;
+}
+
+/* Firefox Support */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #0d9488 #020617; /* Thumb color, then track color */
+}
+
+/* Custom Cyberpunk Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #020617; /* Matches slate-950 */
+  border-radius: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #0d9488; /* Matches teal-600 */
+  border-radius: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2dd4bf; /* Matches teal-400 */
+}

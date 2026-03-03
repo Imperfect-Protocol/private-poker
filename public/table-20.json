@@ -1,0 +1,30 @@
+{
+    "id": "20",
+    "name": "George's Texas Hold'em",
+    "game": "Texas Hold'em",
+    "buyin": "$2000",
+    "blinds": "$20/$40",
+    "max_players": "2",
+    "current_players": "2",
+    "state": "playing",
+    "total_buyin": "$4000",
+    "players": [
+        {
+            "name": "George",
+            "chips_remain": "$3140"
+        },
+        {
+            "name": "Harry",
+            "chips_remain": "$620"
+        }
+    ],
+    "current_hand": {
+        "current_pot": "$240",
+        "current_player": "2",
+        "community_cards": "As9dThJh2d",
+        "player_cards": "AhJc",
+        "min_bet": 40,
+        "max_bet": 3140,
+        "bet_step": 10
+    }
+}

@@ -1,0 +1,18 @@
+{
+    "lobbies": [
+        {
+            "id": "1",
+            "name": "Texas Hold'em",
+            "tables": "5",
+            "total_players": "17",
+            "total_buyin": "$19000"
+        },
+        {
+            "id": "2",
+            "name": "Draw Poker",
+            "tables": "0",
+            "total_players": "0",
+            "total_buyin": "0"
+        }
+    ]
+}
