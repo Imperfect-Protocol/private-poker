@@ -20,7 +20,8 @@
             "blinds": "$20/$40",
             "max_players": "2",
             "current_players": "2",
-            "state": "playing"
+            "state": "playing",
+            "joined": true
         },
         {
             "id": "30",
