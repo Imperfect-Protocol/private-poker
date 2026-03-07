@@ -2,6 +2,7 @@
     "lobbies": [
         {
             "id": "1",
+            "active": "true",
             "name": "Texas Hold'em",
             "tables": "5",
             "total_players": "17",

@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 export default function CreateTablePage() {
   const [formData, setFormData] = useState({
-    name: "My Private Node",
+    name: "New Player Table",
     game: "Texas Hold'em",
     buyin: 1000,
     blinds: "10/20",
@@ -14,9 +14,9 @@ export default function CreateTablePage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log("Deploying Table:", formData);
+    console.log("Creating Table:", formData);
     // Here you would normally POST to your API, then redirect to the new table ID
-    alert("Protocol deployed! Check console for data.");
+    alert("Table created! Check console for data.");
   };
 
   const handleCancel = () => {
@@ -35,10 +35,10 @@ export default function CreateTablePage() {
         {/* Header */}
         <div className="bg-slate-950/50 p-6 border-b border-teal-500/20">
           <p className="text-teal-500 font-mono text-xs tracking-[0.3em] uppercase mb-1">
-            Initialization Sequence
+            Private Poker | Imperfect Protocol
           </p>
           <h1 className="text-2xl font-black text-white tracking-tighter uppercase">
-            Deploy New Protocol
+            Create New Table
           </h1>
         </div>
 
@@ -122,7 +122,7 @@ export default function CreateTablePage() {
               type="submit"
               className="flex-[2] py-3 rounded-lg bg-teal-500 text-slate-950 font-black hover:bg-teal-400 transition-colors uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)] cursor-pointer"
             >
-              Initialize Node
+              Create
             </button>
           </div>
 

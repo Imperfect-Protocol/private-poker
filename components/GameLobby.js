@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from 'react';
-import WalletAuth from './WalletAuth';
 
 // 1. EXTRACTED COMPONENT: Prevents unmounting/remounting on every parent render
 const TableRow = ({ table, highlight = false }) => {
@@ -120,9 +119,6 @@ export default function GameLobby({ tables = [] }) {
 
               <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
 
-                {/* 1. The Wallet Connect Module */}
-                <WalletAuth />
-
                 {/* 2. The Create Table Button */}
                 <a
                   href="/tables/create"
@@ -130,7 +126,7 @@ export default function GameLobby({ tables = [] }) {
                   rel="noopener noreferrer"
                   className="whitespace-nowrap px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest bg-slate-900 border-2 border-teal-400 text-teal-400 hover:bg-teal-400 hover:text-slate-950 transition-all shadow-[0_0_15px_rgba(45,212,191,0.15)] hover:shadow-[0_0_20px_rgba(45,212,191,0.5)] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
                 >
-                  + Deploy Table
+                  + Create New Table
                 </a>
 
                 {/* 3. The Search Bar */}
@@ -167,7 +163,7 @@ export default function GameLobby({ tables = [] }) {
                   ) : (
                     <tr>
                       <td colSpan="5" className="text-center py-16 text-teal-600/50 font-mono text-xs uppercase tracking-widest border border-dashed border-teal-500/20 rounded-xl bg-slate-900/30">
-                        {searchQuery ? `No signals match "${searchQuery}"` : "No open networks available."}
+                        {searchQuery ? `No tables match "${searchQuery}"` : "No tables available."}
                       </td>
                     </tr>
                   )}

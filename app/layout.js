@@ -1,5 +1,5 @@
-import Web3Provider from '@/components/Web3Provider';
-import './globals.css'; // Assuming you have standard Tailwind imports here
+import { Web3Provider } from '@/components/Web3Provider';
+import './globals.css';
 
 export default function RootLayout({ children }) {
   return (
