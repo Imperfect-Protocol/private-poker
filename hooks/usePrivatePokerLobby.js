@@ -1,7 +1,7 @@
 import { usePublicClient, useWriteContract, useWatchContractEvent } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
 
-const LOBBY_CONTRACT_ADDRESS = "0xab8e440727a38bbb180f7032ca4a8009e7b52b80";
+const LOBBY_CONTRACT_ADDRESS = "0xe547a947fc6c8683c210a6a56a9de05dd87142ea";
 
 const LOBBY_ABI = parseAbi([
     // Reads

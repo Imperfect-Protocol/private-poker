@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import GameLobby from '@/components/GameLobby';
 import { usePrivatePokerLobby, useListenForNewTables } from '@/hooks/usePrivatePokerLobby';
+import { getBlindsForBuyin } from '@/lib/stakes';
 
 export default function LobbyPage({ params }) {
   // 1. Unwrap the params properly for a Next.js 15 Client Component
@@ -46,9 +47,9 @@ export default function LobbyPage({ params }) {
           fetchedTables.push({
             id: tableData.id,
             name: tableData.name,
-            buyin: tableData.buyIn, // FIXED: Pulling from the decoded tableData
-            game: "Texas Hold'em",
-            blinds: "10/20",
+            buyin: tableData.buyIn,
+            game: lobbyName,
+            blinds: getBlindsForBuyin(tableData.buyIn),
             max_players: 2,
             current_players: 0,
             state: "seating",
@@ -57,7 +58,7 @@ export default function LobbyPage({ params }) {
           });
         }
 
-        // FIXED: Passing the array, not the function!
+        fetchedTables.sort((a, b) => a.id - b.id);
         setTables(fetchedTables);
       } catch (error) {
         console.error(`Failed to fetch tables for lobby ${id}:`, error);

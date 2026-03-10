@@ -1,10 +1,11 @@
+// app/tables/create/page.js
 "use client";
 
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
+import { STAKES_OPTIONS } from '@/lib/stakes';
 
-// Extract the form into its own component so it can use searchParams safely
 function CreateTableForm() {
   const searchParams = useSearchParams();
   const urlLobbyId = searchParams.get('lobbyId') || "1";
@@ -12,10 +13,10 @@ function CreateTableForm() {
 
   const [formData, setFormData] = useState({
     name: "New Player Table",
-    game: urlLobbyName, // Default the game type to the Lobby Name
-    buyin: 1000,
-    blinds: "10/20",
-    maxPlayers: 6,
+    game: urlLobbyName,
+    buyin: STAKES_OPTIONS[2].buyin,
+    blinds: STAKES_OPTIONS[2].blinds,
+    maxPlayers: 2,
     lobbyId: Number(urlLobbyId)
   });
 
@@ -54,7 +55,6 @@ function CreateTableForm() {
   return (
     <div className="relative z-10 w-full max-w-lg bg-slate-900/90 backdrop-blur-xl border border-teal-500/30 rounded-2xl shadow-[0_0_50px_rgba(20,184,166,0.15)] overflow-hidden">
       
-      {/* Header - Now displaying the dynamic lobby name */}
       <div className="bg-slate-950/50 p-6 border-b border-teal-500/20">
         <p className="text-teal-500 font-mono text-xs tracking-[0.3em] uppercase mb-1">
           Private Poker | {urlLobbyName} Lobby
@@ -85,7 +85,7 @@ function CreateTableForm() {
               value={formData.game}
               onChange={(e) => setFormData({...formData, game: e.target.value})}
               className="w-full bg-slate-950 border border-slate-700 text-slate-500 text-sm font-bold px-4 py-3 rounded-lg focus:outline-none transition-all cursor-not-allowed"
-              disabled // Lock the game type to the current lobby
+              disabled 
             />
           </div>
           
@@ -105,30 +105,31 @@ function CreateTableForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-5">
-          <div>
-            <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Buy-In ($)</label>
-            <input 
-              type="number" 
-              value={formData.buyin}
-              onChange={(e) => setFormData({...formData, buyin: Number(e.target.value)})}
-              className="w-full bg-slate-950 border border-slate-700 text-teal-400 font-mono text-sm font-bold px-4 py-3 rounded-lg focus:outline-none focus:border-teal-400 focus:shadow-[0_0_15px_rgba(20,184,166,0.2)] transition-all"
-              required
-              disabled={isPending}
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Blinds</label>
-            <input 
-              type="text" 
-              value={formData.blinds}
-              onChange={(e) => setFormData({...formData, blinds: e.target.value})}
-              placeholder="e.g. 10/20"
-              className="w-full bg-slate-950 border border-slate-700 text-teal-400 font-mono text-sm font-bold px-4 py-3 rounded-lg focus:outline-none focus:border-teal-400 focus:shadow-[0_0_15px_rgba(20,184,166,0.2)] transition-all"
-              required
-              disabled={isPending}
-            />
-          </div>
+        {/* Replaced the two inputs with a single standardized select */}
+        <div>
+          <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Stakes & Buy-In</label>
+          <select 
+            value={formData.buyin}
+            onChange={(e) => {
+              const selectedValue = Number(e.target.value);
+              const selectedOption = STAKES_OPTIONS.find(opt => opt.buyin === selectedValue);
+              if (selectedOption) {
+                setFormData({
+                  ...formData, 
+                  buyin: selectedOption.buyin, 
+                  blinds: selectedOption.blinds
+                });
+              }
+            }}
+            className="w-full bg-slate-950 border border-slate-700 text-teal-400 text-sm font-bold px-4 py-3 rounded-lg focus:outline-none focus:border-teal-400 transition-all appearance-none cursor-pointer font-mono focus:shadow-[0_0_15px_rgba(20,184,166,0.2)]"
+            disabled={isPending}
+          >
+            {STAKES_OPTIONS.map((opt) => (
+              <option key={opt.buyin} value={opt.buyin}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex gap-4 mt-6 pt-6 border-t border-slate-800">

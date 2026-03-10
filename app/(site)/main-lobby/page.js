@@ -41,6 +41,7 @@ export default function MainLobbyPage() {
                     });
                 }
 
+                fetchedLobbies.sort((a, b) => a.id - b.id);
                 setLobbies(fetchedLobbies);
             } catch (error) {
                 console.error("Failed to fetch lobbies from Stylus:", error);
