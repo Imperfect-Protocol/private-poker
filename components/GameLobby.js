@@ -61,7 +61,7 @@ const TableRow = ({ table, highlight = false }) => {
   );
 };
 
-export default function GameLobby({ tables = [] }) {
+export default function GameLobby({ tables = [], lobbyId, lobbyName }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   // 2. MEMOIZATION: Only recalculate arrays when data or search changes
@@ -121,7 +121,7 @@ export default function GameLobby({ tables = [] }) {
 
                 {/* 2. The Create Table Button */}
                 <a
-                  href="/tables/create"
+                  href={`/tables/create?lobbyId=${lobbyId}&lobbyName=${encodeURIComponent(lobbyName)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="whitespace-nowrap px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest bg-slate-900 border-2 border-teal-400 text-teal-400 hover:bg-teal-400 hover:text-slate-950 transition-all shadow-[0_0_15px_rgba(45,212,191,0.15)] hover:shadow-[0_0_20px_rgba(45,212,191,0.5)] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"

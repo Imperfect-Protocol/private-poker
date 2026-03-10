@@ -23,7 +23,7 @@ export default function LobbyCard({ lobby }) {
                                 ? 'bg-teal-500/10 border-teal-500/30 text-teal-400' 
                                 : 'bg-slate-900 border-slate-800 text-slate-600'}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-teal-500 animate-pulse' : 'bg-slate-700'}`} />
-                                {isActive ? 'Operational' : 'Offline'}
+                                {isActive ? 'Active' : 'Coming Soon'}
                             </div>
                         </div>
 
@@ -41,7 +41,7 @@ export default function LobbyCard({ lobby }) {
                                 </p>
                             </div>
                             <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
-                                <p className="text-[10px] text-teal-600 font-mono uppercase mb-1">Nodes</p>
+                                <p className="text-[10px] text-teal-600 font-mono uppercase mb-1">Total Tables</p>
                                 <p className={`font-mono font-bold text-lg ${isActive ? 'text-white' : 'text-slate-600'}`}>
                                     {lobby.table_count}
                                 </p>
@@ -54,7 +54,7 @@ export default function LobbyCard({ lobby }) {
                         ? 'bg-slate-900 text-teal-500 border border-teal-500/50 group-hover:bg-teal-400 group-hover:text-slate-950 group-hover:border-teal-400'
                         : 'bg-slate-900 text-slate-600 border border-slate-800'
                         }`}>
-                        {isActive ? 'Enter Network' : 'Disconnected'}
+                        {isActive ? 'Enter' : 'Unavailable'}
                     </div>
                 </div>
             </div>
