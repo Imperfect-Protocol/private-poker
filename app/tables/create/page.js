@@ -5,15 +5,17 @@ import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { STAKES_OPTIONS } from '@/lib/stakes';
+import { getGameTypeName } from '@/lib/constants';
 
 function CreateTableForm() {
   const searchParams = useSearchParams();
   const urlLobbyId = searchParams.get('lobbyId') || "1";
   const urlLobbyName = searchParams.get('lobbyName') || "Unknown";
+  const urlGameType = searchParams.get('gameType') || "1";
 
   const [formData, setFormData] = useState({
     name: "New Player Table",
-    game: urlLobbyName,
+    game: getGameTypeName(Number(urlGameType)),
     buyin: STAKES_OPTIONS[2].buyin,
     blinds: STAKES_OPTIONS[2].blinds,
     maxPlayers: 2,
@@ -27,8 +29,10 @@ function CreateTableForm() {
     e.preventDefault();
     try {
       setIsPending(true);
-      const tableId = Date.now(); 
-      const dummyPublicKey = "0xBLS_PUBLIC_KEY_PLACEHOLDER"; 
+      const tableId = Date.now();
+
+      // Needs to be a valid hex string for ABI 'bytes' type
+      const dummyPublicKey = "0x00";
 
       const txHash = await createTable(
         formData.lobbyId,
@@ -54,7 +58,7 @@ function CreateTableForm() {
 
   return (
     <div className="relative z-10 w-full max-w-lg bg-slate-900/90 backdrop-blur-xl border border-teal-500/30 rounded-2xl shadow-[0_0_50px_rgba(20,184,166,0.15)] overflow-hidden">
-      
+
       <div className="bg-slate-950/50 p-6 border-b border-teal-500/20">
         <p className="text-teal-500 font-mono text-xs tracking-[0.3em] uppercase mb-1">
           Private Poker | {urlLobbyName} Lobby
@@ -67,10 +71,10 @@ function CreateTableForm() {
       <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-5">
         <div>
           <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Protocol Name</label>
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full bg-slate-950 border border-slate-700 text-teal-400 text-sm font-bold px-4 py-3 rounded-lg focus:outline-none focus:border-teal-400 focus:shadow-[0_0_15px_rgba(20,184,166,0.2)] transition-all"
             required
             disabled={isPending}
@@ -80,20 +84,20 @@ function CreateTableForm() {
         <div className="grid grid-cols-2 gap-5">
           <div>
             <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Game Type</label>
-            <input 
+            <input
               type="text"
               value={formData.game}
-              onChange={(e) => setFormData({...formData, game: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, game: e.target.value })}
               className="w-full bg-slate-950 border border-slate-700 text-slate-500 text-sm font-bold px-4 py-3 rounded-lg focus:outline-none transition-all cursor-not-allowed"
-              disabled 
+              disabled
             />
           </div>
-          
+
           <div>
             <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Capacity</label>
-            <select 
+            <select
               value={formData.maxPlayers}
-              onChange={(e) => setFormData({...formData, maxPlayers: Number(e.target.value)})}
+              onChange={(e) => setFormData({ ...formData, maxPlayers: Number(e.target.value) })}
               className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm font-bold px-4 py-3 rounded-lg focus:outline-none focus:border-teal-400 transition-all appearance-none cursor-pointer font-mono"
               disabled={isPending}
             >
@@ -108,15 +112,15 @@ function CreateTableForm() {
         {/* Replaced the two inputs with a single standardized select */}
         <div>
           <label className="block text-[10px] text-teal-600 font-mono uppercase mb-2 tracking-widest">Stakes & Buy-In</label>
-          <select 
+          <select
             value={formData.buyin}
             onChange={(e) => {
               const selectedValue = Number(e.target.value);
               const selectedOption = STAKES_OPTIONS.find(opt => opt.buyin === selectedValue);
               if (selectedOption) {
                 setFormData({
-                  ...formData, 
-                  buyin: selectedOption.buyin, 
+                  ...formData,
+                  buyin: selectedOption.buyin,
                   blinds: selectedOption.blinds
                 });
               }
@@ -133,7 +137,7 @@ function CreateTableForm() {
         </div>
 
         <div className="flex gap-4 mt-6 pt-6 border-t border-slate-800">
-          <button 
+          <button
             type="button"
             onClick={handleCancel}
             disabled={isPending}
@@ -141,7 +145,7 @@ function CreateTableForm() {
           >
             Abort
           </button>
-          <button 
+          <button
             type="submit"
             disabled={isPending}
             className="flex-[2] py-3 rounded-lg bg-teal-500 text-slate-950 font-black hover:bg-teal-400 transition-colors uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex justify-center items-center"

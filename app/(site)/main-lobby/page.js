@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import LobbyCard from '@/components/LobbyCard.js';
 import { usePrivatePokerLobby, useListenForNewLobbies } from '@/hooks/usePrivatePokerLobby';
+import { getLobbyStatus } from '@/lib/constants';
 
 export default function MainLobbyPage() {
     const [lobbies, setLobbies] = useState([]);
@@ -28,16 +29,13 @@ export default function MainLobbyPage() {
 
                 for (let i = 0; i < count; i++) {
                     const lobbyData = await getLobbyAt(i);
-
-                    // Construct the object exactly as LobbyCard expects it from game.json
                     fetchedLobbies.push({
                         id: lobbyData.id,
-                        active: "true",
+                        active: getLobbyStatus(lobbyData.flags) === 'active' ? "true" : "false", 
                         name: lobbyData.name,
                         table_count: lobbyData.tableCount.toString(),
-                        // Placeholders until we aggregate table data from the contract
-                        total_players: "0",
-                        total_buyin: "$0"
+                        total_players: "0", 
+                        total_buyin: `$${lobbyData.totalVolume}` 
                     });
                 }
 

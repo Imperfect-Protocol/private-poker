@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import GameLobby from '@/components/GameLobby';
 import { usePrivatePokerLobby, useListenForNewTables } from '@/hooks/usePrivatePokerLobby';
 import { getBlindsForBuyin } from '@/lib/stakes';
+import { getGameTypeName, getTableState } from '@/lib/constants';
 
 export default function LobbyPage({ params }) {
   // 1. Unwrap the params properly for a Next.js 15 Client Component
@@ -11,6 +12,7 @@ export default function LobbyPage({ params }) {
 
   const [tables, setTables] = useState([]);
   const [lobbyName, setLobbyName] = useState("Loading Lobby...");
+  const [lobbyGameType, setLobbyGameType] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -29,10 +31,15 @@ export default function LobbyPage({ params }) {
 
         // 2. Fetch the lobby name (optional, but makes the UI look good)
         const lobbyCount = await getLobbyCount();
+        let currentGameType = 1;
+
+        let lobbyGame = 0;
         for (let i = 0; i < lobbyCount; i++) {
           const lobbyData = await getLobbyAt(i);
           if (lobbyData.id === id) {
             setLobbyName(lobbyData.name);
+            currentGameType = lobbyData.gameType;
+            setLobbyGameType(currentGameType);
             break;
           }
         }
@@ -47,14 +54,12 @@ export default function LobbyPage({ params }) {
           fetchedTables.push({
             id: tableData.id,
             name: tableData.name,
-            buyin: tableData.buyIn,
-            game: lobbyName,
+            buyin: tableData.buyIn, 
+            game: getGameTypeName(currentGameType),
             blinds: getBlindsForBuyin(tableData.buyIn),
-            max_players: 2,
-            current_players: 0,
-            state: "seating",
-            total_buyin: "$4000",
-            players: []
+            max_players: 6,
+            current_players: tableData.playerCount, // Mapped to new property
+            state: getTableState(tableData.flags),
           });
         }
 
@@ -96,7 +101,7 @@ export default function LobbyPage({ params }) {
             Syncing Tables with Arbitrum Stylus...
           </div>
         ) : (
-          <GameLobby tables={tables} lobbyId={id} lobbyName={lobbyName} />
+          <GameLobby tables={tables} lobbyId={id} lobbyName={lobbyName} gameType={lobbyGameType} />
         )}
       </div>
     </main>

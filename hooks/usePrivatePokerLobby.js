@@ -9,11 +9,13 @@ const LOBBY_ABI = parseAbi([
     "function getLobbyAt(uint256 index) view returns (bytes)",
     "function getTableCount(uint256 lobbyId) view returns (uint256)",
     "function getTableAt(uint256 lobbyId, uint256 index) view returns (bytes)",
-    // Writes
-    "function addLobby(uint256 id, string name)",
-    "function createTable(uint256 lobbyId, uint256 tableId, string name, uint256 buyIn, string annoncePublicKey)",
+    
+    // Writes (Updated to match privatepoker_lobby.rs)
+    "function addLobby(uint256 id, uint256 gameType, uint256 flags, string name)",
+    "function createTable(uint256 lobbyId, uint256 tableId, string name, uint256 buyIn, bytes annoncePublicKey)",
     "function removeLobby(uint256 id)",
     "function removeTable(uint256 lobbyId, uint256 tableId)",
+    
     // Events
     "event LobbyCreated(uint256 id, string name)",
     "event TableCreated(uint256 id, string name, uint256 buy_in)"
@@ -42,15 +44,17 @@ export function usePrivatePokerLobby() {
             args: [BigInt(index)],
         });
 
-        // Match the camelCase struct fields from Stylus
         const [lobby] = decodeAbiParameters(
             [
                 {
                     type: 'tuple',
                     components: [
                         { name: 'lobbyId', type: 'uint256' },
-                        { name: 'lobbyName', type: 'string' },
-                        { name: 'tableCount', type: 'uint256' }
+                        { name: 'lobbyGameType', type: 'uint256' },
+                        { name: 'lobbyFlags', type: 'uint256' },
+                        { name: 'lobbyTableCount', type: 'uint256' },
+                        { name: 'lobbyTotalVolume', type: 'uint256' },
+                        { name: 'lobbyName', type: 'string' }
                     ]
                 }
             ],
@@ -59,8 +63,11 @@ export function usePrivatePokerLobby() {
 
         return {
             id: lobby.lobbyId.toString(),
+            gameType: Number(lobby.lobbyGameType),
+            flags: Number(lobby.lobbyFlags),
+            tableCount: Number(lobby.lobbyTableCount),
+            totalVolume: lobby.lobbyTotalVolume.toString(),
             name: lobby.lobbyName,
-            tableCount: Number(lobby.tableCount),
         };
     };
 
@@ -88,8 +95,11 @@ export function usePrivatePokerLobby() {
                     type: 'tuple',
                     components: [
                         { name: 'tableId', type: 'uint256' },
-                        { name: 'tableName', type: 'string' },
-                        { name: 'tableBuyin', type: 'uint256' }
+                        { name: 'tableFlags', type: 'uint256' },
+                        { name: 'tableBuyin', type: 'uint256' },
+                        { name: 'tablePlayerCount', type: 'uint256' },
+                        { name: 'tableTotalBuyin', type: 'uint256' },
+                        { name: 'tableName', type: 'string' }
                     ]
                 }
             ],
@@ -98,28 +108,31 @@ export function usePrivatePokerLobby() {
 
         return {
             id: table.tableId.toString(),
-            name: table.tableName,
+            flags: Number(table.tableFlags),
             buyIn: table.tableBuyin.toString(),
+            playerCount: Number(table.tablePlayerCount),
+            totalBuyIn: table.tableTotalBuyin.toString(),
+            name: table.tableName,
         };
     };
 
     // --- WRITE OPERATIONS ---
 
-    const addLobby = async (id, name) => {
+    const addLobby = async (id, gameType, flags, name) => {
         return await mutateAsync({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'addLobby',
-            args: [BigInt(id), name],
+            args: [BigInt(id), BigInt(gameType), BigInt(flags), name],
         });
     };
 
-    const createTable = async (lobbyId, tableId, name, buyIn, publicKey) => {
+    const createTable = async (lobbyId, tableId, name, buyIn, publicKeyBytes) => {
         return await mutateAsync({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'createTable',
-            args: [BigInt(lobbyId), BigInt(tableId), name, BigInt(buyIn), publicKey],
+            args: [BigInt(lobbyId), BigInt(tableId), name, BigInt(buyIn), publicKeyBytes],
         });
     };
 
@@ -141,16 +154,9 @@ export function usePrivatePokerLobby() {
         });
     };
 
-
     return {
-        getLobbyCount,
-        getLobbyAt,
-        getTableCount,
-        getTableAt,
-        addLobby,
-        createTable,
-        removeLobby,
-        removeTable,
+        getLobbyCount, getLobbyAt, getTableCount, getTableAt,
+        addLobby, createTable, removeLobby, removeTable,
     };
 }
 
@@ -181,3 +187,4 @@ export function useListenForNewTables(onTableCreated) {
         },
     });
 }
+
