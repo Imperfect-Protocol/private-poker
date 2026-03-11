@@ -4,18 +4,20 @@
 import React, { useState, useEffect } from 'react';
 import { useConnection } from 'wagmi';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
-import ActiveTableView from '@/components/ActiveTableView'; // We will move your table code here
-import JoinTableGateway from '@/components/JoinTableGateway'; // Our new gateway component
+import ActiveTableView from '@/components/ActiveTableView';
+import JoinTableGateway from '@/components/JoinTableGateway';
 
 export default function TableClient({ tableId, lobbyId }) {
   const [liveTableData, setLiveTableData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSeated, setIsSeated] = useState(false);
 
+  // 1. Add a trigger state to force a re-fetch
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
   const { address } = useConnection();
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
 
-  // Fetch the table details and check if the user is seated
   useEffect(() => {
     const loadTable = async () => {
       try {
@@ -27,11 +29,9 @@ export default function TableClient({ tableId, lobbyId }) {
           name: detail.info.name,
           buyin: detail.info.buyIn,
           players: detail.players,
-          // Keep your temporary mock data
           current_hand: { min_bet: 10, max_bet: 100, bet_step: 10, community_cards: "" }
         });
 
-        // Check if the current wallet is in the list of seated players
         if (address) {
           const userTables = await getPlayerTables(address);
           setIsSeated(userTables.includes(tableId.toString()));
@@ -46,7 +46,8 @@ export default function TableClient({ tableId, lobbyId }) {
     };
 
     loadTable();
-  }, [lobbyId, tableId, address]);
+    // 2. Add refreshTrigger to the dependency array
+  }, [lobbyId, tableId, address, refreshTrigger]);
 
   if (isLoading || !liveTableData) {
     return (
@@ -58,11 +59,14 @@ export default function TableClient({ tableId, lobbyId }) {
     );
   }
 
-  // If seated, render the active WebRTC game table. 
-  // If not, render the gateway to join.
+  // 3. Update onJoined to trigger the refetch instead of just flipping the boolean
   return isSeated ? (
     <ActiveTableView tableData={liveTableData} lobbyId={lobbyId} />
   ) : (
-    <JoinTableGateway tableData={liveTableData} lobbyId={lobbyId} onJoined={() => setIsSeated(true)} />
+    <JoinTableGateway
+      tableData={liveTableData}
+      lobbyId={lobbyId}
+      onJoined={() => setRefreshTrigger(prev => prev + 1)}
+    />
   );
 }

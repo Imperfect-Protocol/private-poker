@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, use } from 'react';
-import { useConnection } from 'wagmi';
+import { useConnection, useWatchBlockNumber } from 'wagmi';
 import GameLobby from '@/components/GameLobby';
 import { usePrivatePokerLobby, useListenForNewTables } from '@/hooks/usePrivatePokerLobby';
 import { getBlindsForBuyin } from '@/lib/stakes';
@@ -10,7 +10,7 @@ import { getGameTypeName, getTableState } from '@/lib/constants';
 export default function LobbyPage({ params }) {
   const { id } = use(params);
   const { address } = useConnection();
-  
+
   const [tables, setTables] = useState([]);
   const [lobbyInfo, setLobbyInfo] = useState({ name: "Loading...", gameType: 1 });
   const [userTables, setUserTables] = useState([]); // Track tables the user is in
@@ -21,9 +21,16 @@ export default function LobbyPage({ params }) {
   const { getLobbyById, getTableCount, getTablesRange, getPlayerTables } = usePrivatePokerLobby();
 
   useListenForNewTables((newTableArgs) => {
-      if (newTableArgs.lobby_id?.toString() === id.toString()) {
-          setRefreshTrigger(prev => prev + 1);
-      }
+    if (newTableArgs.lobby_id?.toString() === id.toString()) {
+      setRefreshTrigger(prev => prev + 1);
+    }
+  });
+
+  useWatchBlockNumber({
+    chainId: 412346,
+    onBlockNumber() {
+      setRefreshTrigger(prev => prev + 1);
+    },
   });
 
   useEffect(() => {
@@ -33,35 +40,35 @@ export default function LobbyPage({ params }) {
 
         const lobbyData = await getLobbyById(id);
         setLobbyInfo({
-            name: lobbyData.name,
-            gameType: lobbyData.gameType
+          name: lobbyData.name,
+          gameType: lobbyData.gameType
         });
 
         // Fetch all tables in this lobby
         const count = await getTableCount(id);
         if (count > 0) {
-            const rawTables = await getTablesRange(id, 0, count);
-            const mappedTables = rawTables.map(tableData => ({
-                id: tableData.id,
-                name: tableData.name,
-                buyin: tableData.buyIn, 
-                game: getGameTypeName(lobbyData.gameType),
-                blinds: getBlindsForBuyin(tableData.buyIn),
-                max_players: 6,
-                current_players: tableData.playerCount, 
-                state: getTableState(tableData.flags)
-            }));
-            setTables(mappedTables);
+          const rawTables = await getTablesRange(id, 0, count);
+          const mappedTables = rawTables.map(tableData => ({
+            id: tableData.id,
+            name: tableData.name,
+            buyin: tableData.buyIn,
+            game: getGameTypeName(lobbyData.gameType),
+            blinds: getBlindsForBuyin(tableData.buyIn),
+            max_players: 6,
+            current_players: tableData.playerCount,
+            state: getTableState(tableData.flags)
+          }));
+          setTables(mappedTables);
         } else {
-            setTables([]);
+          setTables([]);
         }
 
         // Fetch tables the current user is sitting at
         if (address) {
-            const myTables = await getPlayerTables(address);
-            setUserTables(myTables);
+          const myTables = await getPlayerTables(address);
+          setUserTables(myTables);
         } else {
-            setUserTables([]);
+          setUserTables([]);
         }
 
       } catch (error) {
@@ -92,17 +99,17 @@ export default function LobbyPage({ params }) {
         </div>
 
         {isLoading ? (
-            <div className="w-full text-center py-16 text-teal-600/50 font-mono text-xs uppercase tracking-widest border border-dashed border-teal-500/20 rounded-xl bg-slate-900/30">
-                Syncing Tables with Arbitrum Stylus...
-            </div>
+          <div className="w-full text-center py-16 text-teal-600/50 font-mono text-xs uppercase tracking-widest border border-dashed border-teal-500/20 rounded-xl bg-slate-900/30">
+            Syncing Tables with Arbitrum Stylus...
+          </div>
         ) : (
-            <GameLobby 
-                tables={tables} 
-                lobbyId={id} 
-                lobbyName={lobbyInfo.name} 
-                gameType={lobbyInfo.gameType} 
-                userTables={userTables}
-            />
+          <GameLobby
+            tables={tables}
+            lobbyId={id}
+            lobbyName={lobbyInfo.name}
+            gameType={lobbyInfo.gameType}
+            userTables={userTables}
+          />
         )}
       </div>
     </main>
