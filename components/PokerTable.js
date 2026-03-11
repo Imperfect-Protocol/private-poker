@@ -1,8 +1,16 @@
 // components/PokerTable.js
 
-export default function PokerTable({ tableData, currentUserName = "Harry" }) {
+export default function PokerTable({ tableData, currentUserAddress = "" }) {
+  // Helper to format Ethereum addresses nicely
+  const formatAddress = (address) => {
+    if (!address) return "0x00...0000";
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
   // 1. ROTATION LOGIC: Find the user and move them to the front of the list
-  const userIndex = tableData.players.findIndex(p => p.name === currentUserName);
+  const userIndex = tableData?.players?.findIndex(
+    p => p.address?.toLowerCase() === currentUserAddress?.toLowerCase()
+  ) ?? -1;
 
   // If user isn't found, just use the normal array, otherwise rotate it
   const rotatedPlayers = userIndex >= 0
@@ -10,7 +18,7 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
       ...tableData.players.slice(userIndex),
       ...tableData.players.slice(0, userIndex)
     ]
-    : tableData.players;
+    : (tableData?.players || []);
 
   const clockPositions = {
     12: "top-[-5%] left-1/2 -translate-x-1/2",
@@ -50,8 +58,8 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
     return cards;
   };
 
-  const communityCards = parseCards(tableData.current_hand?.community_cards);
-  const heroCards = parseCards(tableData.current_hand?.player_cards);
+  const communityCards = parseCards(tableData?.current_hand?.community_cards);
+  const heroCards = parseCards(tableData?.current_hand?.player_cards);
 
   // Helper Component for rendering individual cards
   const Card = ({ suit, rank, isHidden, size = "sm" }) => {
@@ -111,7 +119,7 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
           <div className="bg-slate-900/90 border-2 border-teal-500/40 px-8 py-3 rounded-2xl backdrop-blur-xl shadow-[0_0_30px_rgba(20,184,166,0.2)]">
             <p className="text-[10px] text-teal-400 font-mono tracking-widest uppercase mb-1">Current Pot</p>
             <p className="text-3xl font-black text-white font-mono tracking-tighter italic">
-              {tableData.current_hand?.current_pot || tableData.total_buyin}
+              {tableData?.current_hand?.current_pot || tableData?.total_buyin || "0"}
             </p>
           </div>
         </div>
@@ -122,15 +130,15 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
         const clockHour = activeSeats[index];
         const positionClass = clockPositions[clockHour];
 
-        const isMe = player.name === currentUserName;
+        const isMe = player.address?.toLowerCase() === currentUserAddress?.toLowerCase();
 
         // Find their original index in the un-rotated array to check if it's their turn
-        const originalIndex = tableData.players.findIndex(p => p.name === player.name);
+        const originalIndex = tableData.players.findIndex(p => p.address === player.address);
         const isTheirTurn = tableData.current_hand?.current_player === originalIndex.toString();
 
         return (
           <div
-            key={player.name}
+            key={player.address}
             className={`absolute ${positionClass} transition-all duration-700 ease-in-out z-20`}
           >
             <div className="flex flex-col items-center group relative">
@@ -139,7 +147,6 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
               <div className={`absolute flex gap-1 z-0 ${isMe ? '-top-12 md:-top-16' : '-top-6'}`}>
                 {isMe && heroCards.length > 0 ? (
                   heroCards.map((card, idx) => (
-                    // Changed size="sm" to size="lg" here
                     <Card key={idx} rank={card[0]} suit={card[1]} isHidden={false} size="lg" />
                   ))
                 ) : (
@@ -150,10 +157,12 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
                 )}
               </div>
 
-              {/* Avatar */}
+              {/* Avatar - Extracts first two hex chars after 0x */}
               <div className={`w-14 h-14 md:w-16 md:h-16 rounded-full bg-slate-950 border-2 ${isMe ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]' : 'border-teal-500 shadow-[0_0_15px_rgba(20,184,166,0.5)]'} flex items-center justify-center relative overflow-hidden group-hover:scale-110 transition-transform z-10`}>
                 <div className="absolute inset-0 bg-gradient-to-tr from-teal-900/50 to-transparent" />
-                <span className="relative z-10 text-xl font-black text-white uppercase italic">{player.name[0]}</span>
+                <span className="relative z-10 text-xl font-black text-white uppercase italic">
+                  {player.address?.substring(2, 4)}
+                </span>
 
                 {/* Active Player Indicator */}
                 {isTheirTurn && (
@@ -164,10 +173,10 @@ export default function PokerTable({ tableData, currentUserName = "Harry" }) {
               {/* Stats Box */}
               <div className="mt-3 bg-slate-900/95 border border-teal-500/30 px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10">
                 <p className="text-[10px] font-bold text-slate-300 truncate uppercase tracking-tighter">
-                  {player.name}
+                  {formatAddress(player.address)}
                 </p>
                 <p className="text-xs font-mono text-teal-400 font-black">
-                  {player.chips_remain}
+                  {player.chips}
                 </p>
               </div>
             </div>

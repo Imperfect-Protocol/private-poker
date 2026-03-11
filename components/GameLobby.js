@@ -3,14 +3,13 @@
 import { useState, useMemo } from 'react';
 
 // 1. EXTRACTED COMPONENT: Prevents unmounting/remounting on every parent render
-const TableRow = ({ table, highlight = false }) => {
-  const { id, name, game, buyin, blinds, current_players, max_players, state, joined } = table;
+const TableRow = ({ table, highlight = false, isJoined= false }) => {
+  const { id, name, game, buyin, blinds, current_players, max_players, state } = table;
 
   const currentCount = parseInt(current_players, 10);
   const maxCount = parseInt(max_players, 10);
   const isFull = currentCount >= maxCount;
   const isPlaying = state === "playing";
-  const isJoined = joined === true;
 
   return (
     <tr className="group transition-colors duration-200">
@@ -61,7 +60,7 @@ const TableRow = ({ table, highlight = false }) => {
   );
 };
 
-export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType }) {
+export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, userTables = [] }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   // 2. MEMOIZATION: Only recalculate arrays when data or search changes
@@ -69,14 +68,18 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType })
     const query = searchQuery.toLowerCase().trim();
 
     return tables.reduce((acc, table) => {
-      if (table.joined) {
+      // Check if the current table ID is in the user's list of joined tables
+      const isSeated = userTables.includes(table.id.toString());
+
+      if (isSeated) {
         acc.myTables.push(table);
       } else if (table.name.toLowerCase().includes(query)) {
         acc.otherTables.push(table);
       }
+      
       return acc;
     }, { myTables: [], otherTables: [] });
-  }, [tables, searchQuery]);
+  }, [tables, searchQuery, userTables]);
 
   return (
     <div className="flex flex-col gap-8 w-full">
@@ -97,7 +100,7 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType })
                 <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
                   <tbody>
                     {myTables.map(table => (
-                      <TableRow key={`active-${table.id}`} table={table} highlight={true} />
+                      <TableRow key={`active-${table.id}`} table={table} highlight={true} isJoined={true} />
                     ))}
                   </tbody>
                 </table>
@@ -121,7 +124,7 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType })
 
                 {/* 2. The Create Table Button */}
                 <a
-                  href={`/tables/create?lobbyId=${lobbyId}&lobbyName=${encodeURIComponent(lobbyName)}&gameType=${gameType}`}
+                  href={`/tables/create?lobbyId=${lobbyId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="whitespace-nowrap px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest bg-slate-900 border-2 border-teal-400 text-teal-400 hover:bg-teal-400 hover:text-slate-950 transition-all shadow-[0_0_15px_rgba(45,212,191,0.15)] hover:shadow-[0_0_20px_rgba(45,212,191,0.5)] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
