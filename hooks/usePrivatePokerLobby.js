@@ -16,6 +16,7 @@ const LOBBY_ABI = parseAbi([
     // Writes
     "function addLobby(uint256 id, uint256 gameType, uint256 flags, string name)",
     "function createTable(uint256 lobby_id, uint256 table_id, string calldata name, uint256 buy_in, bytes calldata annonce_public_key)",
+    "function joinTable(uint256 lobby_id, uint256 table_id, bytes calldata annonce_public_key)",
     "function removeLobby(uint256 id)",
     "function removeTable(uint256 lobbyId, uint256 tableId)",
 
@@ -225,6 +226,15 @@ export function usePrivatePokerLobby() {
         });
     };
 
+    const joinTable = async (lobbyId, tableId, buyIn, publicKeyBytes) => {
+        return await mutateAsync({
+            address: LOBBY_CONTRACT_ADDRESS,
+            abi: LOBBY_ABI,
+            functionName: 'joinTable',
+            args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes], 
+        });
+    };
+
     const removeLobby = async (id) => {
         return await mutateAsync({
             address: LOBBY_CONTRACT_ADDRESS,
@@ -246,7 +256,7 @@ export function usePrivatePokerLobby() {
     return {
         getLobbyCount, getLobbyAt, getLobbyById,
         getTableCount, getTablesRange, getTableDetail, getPlayerTables,
-        addLobby, createTable, removeLobby, removeTable,
+        addLobby, createTable, joinTable, removeLobby, removeTable,
     };
 }
 
