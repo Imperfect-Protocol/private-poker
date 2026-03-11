@@ -1,15 +1,34 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAppKitAccount, useAppKitBalance, useAppKit } from '@reown/appkit/react'
-import { useDisconnect } from 'wagmi'
+import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
+import { useDisconnect, useConnection, useBalance, useWatchBlockNumber } from 'wagmi'
+import { formatUnits } from 'viem';
 
 export default function WalletAuth() {
   const [mounted, setMounted] = useState(false)
-  const { address, isConnected } = useAppKitAccount()
-  const { data: balance } = useAppKitBalance()
   const { open } = useAppKit()
   const { disconnect } = useDisconnect()
+  const { isConnected } = useAppKitAccount()
+
+  const { address } = useConnection();
+
+  const { data: balance, refetch } = useBalance({
+    address: address,
+    chainId: 412346,
+  });
+
+  // 3. Listen for new blocks and trigger a refetch
+  useWatchBlockNumber({
+    chainId: 412346,
+    onBlockNumber() {
+      if (address) {
+        refetch();
+      }
+    },
+  });
+
+  console.log("Balance Data", address, balance);
 
   useEffect(() => {
     setMounted(true)
@@ -23,7 +42,7 @@ export default function WalletAuth() {
       <div className="flex items-center bg-slate-900 border border-teal-500/20 rounded px-1 py-1">
         <div className="flex items-center gap-3 px-3 py-1 font-mono font-bold text-[0.8em]">
           <span className="text-teal-400">
-            {parseFloat(balance?.formatted || '0').toFixed(4)} ETH
+            {balance && `${formatUnits(balance.value, balance.decimals)} ${balance.symbol}`}
           </span>
           <span className="text-slate-700">|</span>
           <span className="text-teal-500">

@@ -2,19 +2,23 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
+import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { STAKES_OPTIONS } from '@/lib/stakes';
 import { getGameTypeName } from '@/lib/constants';
 
 function CreateTableForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const urlLobbyId = searchParams.get('lobbyId') || "1";
 
   // State for the blockchain-verified lobby data and existing tables
   const [lobbyInfo, setLobbyInfo] = useState({ name: "Loading...", gameType: 1 });
   const [existingTableNames, setExistingTableNames] = useState([]);
+  const [submitError, setSubmitError] = useState("");
   const [isFetchingLobby, setIsFetchingLobby] = useState(true);
+  const { blsKeys, isGenerating, generateKeys } = useRequireBLS();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -70,26 +74,55 @@ function CreateTableForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isNameTaken) return; // Extra safety guard
+    setSubmitError(""); // Clear old errors
 
+    const cleanName = formData.name.trim();
+
+    // --- PARAMETER VALIDATION ---
+    if (!cleanName) {
+      setSubmitError("Table name cannot be empty.");
+      return;
+    }
+    if (cleanName.length > 32) {
+      setSubmitError("Table name is too long (max 32 characters).");
+      return;
+    }
+    if (isNameTaken) {
+      setSubmitError("A table with this name already exists.");
+      return;
+    }
+    if (!formData.buyin || formData.buyin <= 0) {
+      setSubmitError("Invalid buy-in amount.");
+      return;
+    }
+    if (!formData.lobbyId || formData.lobbyId <= 0) {
+      setSubmitError("Invalid Lobby ID.");
+      return;
+    }
+    if (!blsKeys?.publicKey) {
+      setSubmitError("Session key missing. Please authorize your session.");
+      return;
+    }
+
+    // --- EXECUTION ---
     try {
       setIsPending(true);
       const tableId = Date.now();
-      const dummyPublicKey = "0x00";
 
       const txHash = await createTable(
         formData.lobbyId,
         tableId,
-        formData.name.trim(),
+        cleanName,
         formData.buyin,
-        dummyPublicKey
+        `0x${blsKeys.publicKey}`
       );
 
-      console.log("Table creation transaction submitted:", txHash);
-      window.close();
+      console.log("Success:", txHash);
+      router.push(`/tables/${tableId}`);
+
     } catch (error) {
-      console.error("Failed to create table:", error);
-      alert("Transaction failed or was rejected by the wallet.");
+      console.error(error);
+      setSubmitError("Transaction failed or was rejected by the wallet.");
     } finally {
       setIsPending(false);
     }
@@ -132,8 +165,8 @@ function CreateTableForm() {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className={`w-full bg-slate-950 border text-sm font-bold px-4 py-3 rounded-lg focus:outline-none transition-all ${isNameTaken
-                ? 'border-red-500 text-red-400 focus:border-red-500 focus:shadow-[0_0_15px_rgba(239,68,68,0.2)]'
-                : 'border-slate-700 text-teal-400 focus:border-teal-400 focus:shadow-[0_0_15px_rgba(20,184,166,0.2)]'
+              ? 'border-red-500 text-red-400 focus:border-red-500 focus:shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+              : 'border-slate-700 text-teal-400 focus:border-teal-400 focus:shadow-[0_0_15px_rgba(20,184,166,0.2)]'
               }`}
             required
             disabled={isPending || isFetchingLobby}
@@ -208,20 +241,43 @@ function CreateTableForm() {
           >
             Abort
           </button>
-          <button
-            type="submit"
-            disabled={isPending || isFetchingLobby || isNameTaken || formData.name.trim() === ""}
-            className="flex-[2] py-3 rounded-lg bg-teal-500 text-slate-950 font-black hover:bg-teal-400 transition-colors uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex justify-center items-center"
-          >
-            {isPending ? (
-              <span className="animate-pulse">Awaiting Signature...</span>
-            ) : isFetchingLobby ? (
-              <span className="animate-pulse">Verifying Data...</span>
-            ) : (
-              "Create & Buy-in"
-            )}
-          </button>
+
+          {/* RENDER BUTTON A: If they don't have keys, force them to get keys first */}
+          {!blsKeys ? (
+            <button
+              type="button" // Important: Not a submit button!
+              onClick={generateKeys}
+              disabled={isGenerating}
+              className="flex-[2] py-3 rounded-lg bg-teal-600 text-slate-950 font-black hover:bg-teal-500 transition-colors uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:opacity-50 cursor-pointer"
+            >
+              {isGenerating ? "Generating Session Key..." : "Authorize Session to Continue"}
+            </button>
+          ) : (
+            /* RENDER BUTTON B: The actual form submitter */
+            <button
+              type="submit"
+              // The critical fix: disable if the lobby doesn't exist!
+              disabled={isPending || isFetchingLobby || isNameTaken || formData.name.trim() === "" || lobbyInfo.name === "Lobby Not Found"}
+              className="flex-[2] py-3 rounded-lg bg-teal-500 text-slate-950 font-black hover:bg-teal-400 transition-colors uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex justify-center items-center"
+            >
+              {isPending ? (
+                <span className="animate-pulse">Awaiting Signature...</span>
+              ) : isFetchingLobby ? (
+                <span className="animate-pulse">Verifying Data...</span>
+              ) : lobbyInfo.name === "Lobby Not Found" ? (
+                "Error: Lobby Missing"
+              ) : (
+                "Create & Buy-in"
+              )}
+            </button>
+          )}
         </div>
+        {submitError && (
+          <div className="p-3 bg-red-900/50 border border-red-500/50 rounded-lg text-red-400 text-xs font-bold uppercase tracking-widest text-center">
+            {submitError}
+          </div>
+        )}
+
       </form>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useWriteContract, useWatchContractEvent } from 'wagmi';
 import { parseAbi } from 'viem';
 
-const SIGNAL_CONTRACT_ADDRESS = "0xYourSignalContractAddress";
+const SIGNAL_CONTRACT_ADDRESS = "0x85d9a8a4bd77b9b5559c1b7fcb8ec9635922ed49";
 
 const SIGNAL_ABI = parseAbi([
     "function send_signal(uint256 lobby_id, uint256 table_id, address recipient, bytes encrypted_data)",

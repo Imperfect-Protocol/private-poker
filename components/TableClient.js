@@ -6,6 +6,7 @@ import PokerTable from '@/components/PokerTable';
 import PokerActionBar from '@/components/PokerActionBar';
 import { useConnection } from 'wagmi';
 import { usePokerRTC } from '@/hooks/usePokerRTC';
+import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 
 export default function TableClient({ tableId, lobbyId }) {
@@ -19,6 +20,7 @@ export default function TableClient({ tableId, lobbyId }) {
 
   const { address } = useConnection();
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
+  const { blsKeys, isGenerating, generateKeys } = useRequireBLS();
 
   // 1. Fetch the exact TableDetail from Stylus on mount
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function TableClient({ tableId, lobbyId }) {
   }, [lobbyId, tableId]);
 
   // 2. Initialize RTC (Keeping your existing hook logic)
-  const { status, sendMessage } = usePokerRTC(tableId, (incoming) => {
+  const { status, sendMessage } = usePokerRTC(tableId, blsKeys, (incoming) => {
     if (incoming.type === "GAME_UPDATE") {
       setLiveTableData(prev => prev ? ({
         ...prev,

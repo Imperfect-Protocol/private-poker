@@ -1,7 +1,7 @@
 import { usePublicClient, useWriteContract, useWatchContractEvent } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
 
-const LOBBY_CONTRACT_ADDRESS = "0x0aab0d98f2a0da6f2002da8d3ddb314208341725";
+const LOBBY_CONTRACT_ADDRESS = "0xab8e440727a38bbb180f7032ca4a8009e7b52b80";
 
 const LOBBY_ABI = parseAbi([
     // Reads
@@ -15,7 +15,7 @@ const LOBBY_ABI = parseAbi([
 
     // Writes
     "function addLobby(uint256 id, uint256 gameType, uint256 flags, string name)",
-    "function createTable(uint256 lobbyId, uint256 tableId, string name, uint256 buyIn, bytes annoncePublicKey)",
+    "function createTable(uint256 lobby_id, uint256 table_id, string calldata name, uint256 buy_in, bytes calldata annonce_public_key)",
     "function removeLobby(uint256 id)",
     "function removeTable(uint256 lobbyId, uint256 tableId)",
 
@@ -216,6 +216,7 @@ export function usePrivatePokerLobby() {
     };
 
     const createTable = async (lobbyId, tableId, name, buyIn, publicKeyBytes) => {
+        console.log("createTable()", lobbyId, tableId, name, buyIn, publicKeyBytes);
         return await mutateAsync({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,

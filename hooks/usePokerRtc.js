@@ -1,85 +1,136 @@
-"use client";
-import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useConnection } from 'wagmi';
+import { toHex, hexToBytes } from 'viem';
+import { usePrivatePokerSignal, useListenForSignals } from '@/hooks/usePrivatePokerSignal';
+import { encryptForPeer, decryptFromPeer } from '@/lib/crypto';
 
-export const usePokerRTC = (roomId, onMessageReceived) => {
-  const [status, setStatus] = useState("initializing");
-  const socketRef = useRef();
-  const pcRef = useRef();
-  const dcRef = useRef();
+export function usePokerRTC(tableId, lobbyId, blsKeys, tableCreatorAddress, tableCreatorPubKey, onMessage) {
+  const { address } = useConnection();
+  const { sendSignal } = usePrivatePokerSignal();
+  const [status, setStatus] = useState('connecting');
+  const peersRef = useRef({});
+  const hasInitiatedRef = useRef(false);
 
+  // 1. Listen for targeted signals
+  useListenForSignals(address, async (signalData) => {
+    if (!blsKeys?.privateKey) return;
+
+    // Filter out signals for different tables
+    if (signalData.tableId !== tableId.toString() || signalData.lobbyId !== lobbyId.toString()) return;
+
+    try {
+      // Decode and decrypt the payload
+      const payloadString = new TextDecoder().decode(hexToBytes(signalData.encryptedData));
+      const encryptedPayload = JSON.parse(payloadString);
+
+      const decryptedString = await decryptFromPeer(blsKeys.privateKey, encryptedPayload);
+      const signal = JSON.parse(decryptedString);
+
+      handleIncomingSignal(signalData.sender, signal);
+    } catch (err) {
+      console.error("Failed to decrypt signal from", signalData.sender, err);
+    }
+  });
+
+  // 2. Process the decrypted WebRTC signals
+  const handleIncomingSignal = async (senderAddress, signal) => {
+    let pc = peersRef.current[senderAddress];
+    if (!pc) pc = createPeerConnection(senderAddress, signal.senderPubKey);
+
+    if (signal.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      // The creator sends the answer back to the joiner
+      broadcastSignal(senderAddress, signal.senderPubKey, answer);
+    } else if (signal.type === 'answer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    } else if (signal.type === 'ice-candidate') {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  };
+
+  // 3. Encrypt and send signals to a specific peer
+  const broadcastSignal = useCallback(async (recipientAddress, recipientPubKey, data) => {
+    if (!blsKeys?.publicKey) return;
+
+    const payloadWithPubKey = { ...data, senderPubKey: blsKeys.publicKey };
+    const jsonString = JSON.stringify(payloadWithPubKey);
+
+    const encryptedPayload = await encryptForPeer(recipientPubKey, jsonString);
+    const bytesData = toHex(new TextEncoder().encode(JSON.stringify(encryptedPayload)));
+
+    await sendSignal(lobbyId, tableId, recipientAddress, bytesData);
+  }, [blsKeys, lobbyId, tableId, sendSignal]);
+
+  // 4. Create the connection and data channel
+  const createPeerConnection = useCallback((peerAddress, peerPubKey) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        // Send ICE candidates to the specific peer
+        broadcastSignal(peerAddress, peerPubKey, { type: 'ice-candidate', candidate: event.candidate });
+      }
+    };
+
+    // If we are the ones creating the connection, set up the data channel
+    const dc = pc.createDataChannel("poker-channel");
+    setupDataChannel(dc);
+
+    // Also listen for data channels created by the other side
+    pc.ondatachannel = (event) => setupDataChannel(event.channel);
+
+    peersRef.current[peerAddress] = pc;
+    return pc;
+  }, [broadcastSignal]);
+
+  const setupDataChannel = (dc) => {
+    dc.onmessage = (e) => onMessage(JSON.parse(e.data));
+    dc.onopen = () => setStatus('connected');
+  };
+
+  // 5. Joiner Initiation Flow
   useEffect(() => {
-    socketRef.current = io("http://localhost:3001", { transports: ["websocket"] });
+    // We only want this to run once when the user joins
+    if (hasInitiatedRef.current) return;
+    if (!address || !tableCreatorAddress || !tableCreatorPubKey || !blsKeys?.publicKey) return;
 
-    const initPeerConnection = async (peerId, isOffer) => {
-      pcRef.current = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-      });
+    const isCreator = address.toLowerCase() === tableCreatorAddress.toLowerCase();
 
-      pcRef.current.onicecandidate = (e) => {
-        if (e.candidate) {
-          socketRef.current.emit("signal", { to: peerId, signal: { type: "ice", candidate: e.candidate } });
+    // If I am not the creator, knock on their door
+    if (!isCreator) {
+      hasInitiatedRef.current = true;
+
+      const initiateConnection = async () => {
+        try {
+          // We can just call our functions here without putting them in the array 
+          // as long as we know they aren't trapping old state.
+          const pc = createPeerConnection(tableCreatorAddress, tableCreatorPubKey);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          broadcastSignal(tableCreatorAddress, tableCreatorPubKey, offer);
+        } catch (error) {
+          console.error("Failed to initiate WebRTC:", error);
         }
       };
 
-      pcRef.current.oniceconnectionstatechange = () => {
-        if (pcRef.current.iceConnectionState === "connected") setStatus("connected");
-      };
+      initiateConnection();
+    }
 
-      if (isOffer) {
-        dcRef.current = pcRef.current.createDataChannel("poker-data");
-        setupDataChannel(dcRef.current);
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
-        socketRef.current.emit("signal", { to: peerId, signal: offer });
-      } else {
-        pcRef.current.ondatachannel = (e) => {
-          dcRef.current = e.channel;
-          setupDataChannel(dcRef.current);
-        };
-      }
-    };
+    // Look at how much cleaner this is! Just the raw data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, tableCreatorAddress, tableCreatorPubKey, blsKeys?.publicKey]);
 
-    socketRef.current.on("connect", () => {
-      socketRef.current.emit("join-room", roomId);
+  const sendMessage = (msg) => {
+    Object.values(peersRef.current).forEach(pc => {
+      // Find data channels and send
     });
-
-    // If we join and others are there, we initiate
-    socketRef.current.on("existing-peers", (peers) => {
-      peers.forEach(id => initPeerConnection(id, true));
-    });
-
-    // If we are there and someone else joins, they will initiate (or we can)
-    socketRef.current.on("player-joined", (id) => {
-      console.log("Peer found:", id);
-      // We wait for their offer
-    });
-
-    socketRef.current.on("signal", async ({ from, signal }) => {
-      if (signal.type === "offer") {
-        if (!pcRef.current) await initPeerConnection(from, false);
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-        const answer = await pcRef.current.createAnswer();
-        await pcRef.current.setLocalDescription(answer);
-        socketRef.current.emit("signal", { to: from, signal: answer });
-      } else if (signal.type === "answer") {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-      } else if (signal.type === "ice") {
-        await pcRef.current?.addIceCandidate(new RTCIceCandidate(signal.candidate));
-      }
-    });
-
-    const setupDataChannel = (channel) => {
-      channel.onopen = () => setStatus("connected");
-      channel.onmessage = (e) => onMessageReceived && onMessageReceived(JSON.parse(e.data));
-    };
-
-    return () => socketRef.current.disconnect();
-  }, [roomId]);
-
-  const sendMessage = (data) => {
-    if (dcRef.current?.readyState === "open") dcRef.current.send(JSON.stringify(data));
   };
 
   return { status, sendMessage };
-};
+}
