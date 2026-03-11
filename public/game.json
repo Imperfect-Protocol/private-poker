@@ -4,14 +4,21 @@
             "id": "1",
             "active": "true",
             "name": "Texas Hold'em",
-            "tables": "5",
+            "table_count": "5",
             "total_players": "17",
             "total_buyin": "$19000"
         },
         {
             "id": "2",
+            "name": "Omaha",
+            "table_count": "0",
+            "total_players": "0",
+            "total_buyin": "0"
+        },
+        {
+            "id": "3",
             "name": "Draw Poker",
-            "tables": "0",
+            "table_count": "0",
             "total_players": "0",
             "total_buyin": "0"
         }
