@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "edge:build": "npx @cloudflare/next-on-pages",
+    "edge:preview": "wasmer run . --net",
     "lint": "eslint",
     "signal": "node server/signal-server.js",
     "dev:all": "npx concurrently \"npm run dev\" \"npm run signal\""

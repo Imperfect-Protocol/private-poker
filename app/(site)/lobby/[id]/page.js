@@ -6,6 +6,7 @@ import GameLobby from '@/components/GameLobby';
 import { usePrivatePokerLobby, useListenForNewTables } from '@/hooks/usePrivatePokerLobby';
 import { getBlindsForBuyin } from '@/lib/stakes';
 import { getGameTypeName, getTableState } from '@/lib/constants';
+import { CHAIN_ID } from '@/lib/chain';
 
 export default function LobbyPage({ params }) {
   const { id } = use(params);
@@ -27,7 +28,7 @@ export default function LobbyPage({ params }) {
   });
 
   useWatchBlockNumber({
-    chainId: 412346,
+    chainId: CHAIN_ID,
     onBlockNumber() {
       setRefreshTrigger(prev => prev + 1);
     },

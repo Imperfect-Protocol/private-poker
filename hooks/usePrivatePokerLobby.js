@@ -1,7 +1,6 @@
 import { usePublicClient, useWriteContract, useWatchContractEvent } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
-
-const LOBBY_CONTRACT_ADDRESS = "0xab8e440727a38bbb180f7032ca4a8009e7b52b80";
+import { LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 
 const LOBBY_ABI = parseAbi([
     // Reads
@@ -231,7 +230,7 @@ export function usePrivatePokerLobby() {
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'joinTable',
-            args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes], 
+            args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes],
         });
     };
 

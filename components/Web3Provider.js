@@ -4,34 +4,27 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createAppKit } from '@reown/appkit/react'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { WagmiProvider } from 'wagmi'
+import { CHAIN_ID } from '@/lib/chain'
 
 import { arbitrumSepolia } from '@reown/appkit/networks'
+import { nitroDevNode } from '@/lib/nitroDevNode'
 
-const nitroDevNode = {
-  id: 412346,
-  name: 'Arbitrum NitroDevNode',
-  network: 'nitro-devnode',
-  nativeCurrency: {
-    name: 'Ether',
-    symbol: 'ETH',
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: {
-      http: ['/local-rpc'],
-    },
-    public: {
-      http: ['/local-rpc'],
-    },
-  },
-  testnet: true,
-};
-
+function getNetwork() {
+  if (CHAIN_ID === arbitrumSepolia.id) {
+    return arbitrumSepolia;
+  }
+  else if (CHAIN_ID === nitroDevNode.id) {
+    return nitroDevNode;
+  }
+  else {
+    console.error("Unknown CHAIN_ID: ", CHAIN_ID);
+    throw "Error: Unknown CHAIN_ID";
+  }
+}
 
 const projectId = 'fde97f2dd2d0616984b88e3250697e81'
 const queryClient = new QueryClient()
-const networks = [nitroDevNode]
-// const networks = [arbitrumSepolia]
+const networks = [getNetwork()]
 
 const wagmiAdapter = new WagmiAdapter({
   networks,
