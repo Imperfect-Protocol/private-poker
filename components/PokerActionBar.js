@@ -1,4 +1,3 @@
-"use client";
 import { useState } from 'react';
 
 export default function PokerActionBar({ minBet = 40, maxBet = 1000, step = 10 }) {

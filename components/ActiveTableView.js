@@ -1,6 +1,4 @@
 // components/ActiveTableView.js
-"use client";
-
 import React, { useState } from 'react';
 import PokerTable from '@/components/PokerTable';
 import PokerActionBar from '@/components/PokerActionBar';

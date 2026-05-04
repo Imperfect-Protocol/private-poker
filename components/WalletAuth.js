@@ -1,12 +1,8 @@
-'use client'
-
 import { useState, useEffect } from 'react'
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
 import { useDisconnect, useConnection, useBalance, useWatchBlockNumber } from 'wagmi'
 import { formatUnits } from 'viem';
 import { CHAIN_ID } from '@/lib/chain';
-  
-
 
 export default function WalletAuth() {
   const [mounted, setMounted] = useState(false)

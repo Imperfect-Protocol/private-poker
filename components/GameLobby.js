@@ -1,15 +1,14 @@
-"use client";
-
 import { useState, useMemo } from 'react';
 
 // 1. EXTRACTED COMPONENT: Prevents unmounting/remounting on every parent render
-const TableRow = ({ table, highlight = false, isJoined= false }) => {
+const TableRow = ({ table, lobbyId, highlight = false, isJoined= false }) => {
   const { id, name, game, buyin, blinds, current_players, max_players, state } = table;
 
   const currentCount = parseInt(current_players, 10);
   const maxCount = parseInt(max_players, 10);
   const isFull = currentCount >= maxCount;
   const isPlaying = state === "playing";
+  const tableHref = `/tables/${id}${lobbyId ? `?lobbyId=${encodeURIComponent(lobbyId)}` : ''}`;
 
   return (
     <tr className="group transition-colors duration-200">
@@ -43,7 +42,7 @@ const TableRow = ({ table, highlight = false, isJoined= false }) => {
 
       <td className={`px-4 py-4 bg-slate-900/60 backdrop-blur-sm border-y border-r transition-all rounded-r-xl text-right ${highlight ? 'border-yellow-500/50' : 'border-teal-500/20 group-hover:border-teal-400 group-hover:bg-slate-900'}`}>
         <a
-          href={`/tables/${id}`}
+          href={tableHref}
           target="_blank"
           rel="noopener noreferrer"
           className={`inline-block px-5 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${isJoined
@@ -100,7 +99,7 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, u
                 <table className="w-full text-left border-separate border-spacing-y-2 min-w-[600px]">
                   <tbody>
                     {myTables.map(table => (
-                      <TableRow key={`active-${table.id}`} table={table} highlight={true} isJoined={true} />
+                      <TableRow key={`active-${table.id}`} table={table} lobbyId={lobbyId} highlight={true} isJoined={true} />
                     ))}
                   </tbody>
                 </table>
@@ -161,7 +160,7 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, u
                 <tbody>
                   {otherTables.length > 0 ? (
                     otherTables.map(table => (
-                      <TableRow key={`open-${table.id}`} table={table} />
+                      <TableRow key={`open-${table.id}`} table={table} lobbyId={lobbyId} />
                     ))
                   ) : (
                     <tr>

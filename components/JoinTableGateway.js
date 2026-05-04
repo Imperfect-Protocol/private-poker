@@ -1,6 +1,4 @@
 // components/JoinTableGateway.js
-"use client";
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireBLS } from '@/hooks/useRequireBLS';

@@ -27,6 +27,7 @@ export function BLSProvider({ children }) {
     const channelRef = useRef(null);
     const promptLock = useRef(false); // The lock that kills the infinite loop
 
+    /*
     // 1. Wipe keys if the user disconnects or changes accounts
     useEffect(() => {
         if (!isConnected || !address) {
@@ -96,6 +97,9 @@ export function BLSProvider({ children }) {
             setIsGenerating(false);
         }
     }, [address, mutateAsync]);
+    */
+    
+    const generateKeys = useCallback(async () => {});
 
     return (
         <BLSContext.Provider value={{ blsKeys, isGenerating, generateKeys, isConnected }}>

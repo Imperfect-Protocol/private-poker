@@ -1,13 +1,20 @@
+[package]
+name = "sadhbh-c0d3/private-poker-nextjs"
+version = "0.1.0"
+description = "Private Poker (Next)"
+
 [dependencies]
-"wasmer/winterjs" = "^1.2.0"
+"sadhbh-c0d3/edgejs-quickjs" = "0.0.1"
 
 [fs]
-"/web" = ".vercel/output/static"
+"/web" = ".dist/web"
+"/public" = ".dist/public"
+"/server" = ".dist/server"
 
 [[command]]
-name = "script"
-module = "wasmer/winterjs:winterjs"
-runner = "wasi"
+name = "run"
+module = "sadhbh-c0d3/edgejs-quickjs:edge"
+runner = "https://webc.org/runner/wasi"
 
 [command.annotations.wasi]
-main-args = ["--mode", "cloudflare", "/web"]
+main-args = ["/server/router.cjs"]
