@@ -84,7 +84,7 @@ function main() {
   copyTracedFiles();
 
   copyDir(path.join(projectRoot, "public"), path.join(distRoot, "public"));
-  copyDir(path.join(projectRoot, "server/generated"), path.join(distRoot, "server/generated"));
+  copyDir(path.join(projectRoot, "server/.generated"), path.join(distRoot, "server/generated"));
   copyFile(path.join(projectRoot, "server/router.cjs"), path.join(distRoot, "server/router.cjs"));
 
   console.log(`Edge runtime payload staged in ${path.relative(projectRoot, distRoot)}`);

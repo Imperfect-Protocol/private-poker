@@ -4,7 +4,7 @@ const path = require("path");
 const { AsyncLocalStorage } = require("async_hooks");
 
 const projectRoot = path.resolve(__dirname, "..");
-const outputDir = path.join(__dirname, "generated");
+const outputDir = path.join(__dirname, ".generated");
 const manifestFile = path.join(outputDir, "dynamic-routes.json");
 const nextRoot = path.join(projectRoot, ".next");
 const nextServerRoot = path.join(nextRoot, "server");
