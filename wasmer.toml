@@ -7,7 +7,8 @@ description = "Private Poker (Next)"
 "sadhbh-c0d3/edgejs-quickjs" = "0.0.1"
 
 [fs]
-"/web" = ".dist/web"
+"/.next" = ".dist/.next"
+"/node_modules" = ".dist/node_modules"
 "/public" = ".dist/public"
 "/server" = ".dist/server"
 

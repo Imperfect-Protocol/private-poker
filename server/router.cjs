@@ -2,10 +2,31 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { URL } = require("url");
+const { AsyncLocalStorage } = require("async_hooks");
 
 const webRoot = "/web";
-const publicRoot = "/public";
 const port = Number(process.env.PORT || 3000);
+const fallbackProjectRoot = path.resolve(__dirname, "..");
+const runtimeRoot = fs.existsSync(webRoot) ? "/" : fallbackProjectRoot;
+const publicRoot = fs.existsSync(path.join(runtimeRoot, "public"))
+  ? path.join(runtimeRoot, "public")
+  : path.join(fallbackProjectRoot, "public");
+const nextDistDir = fs.existsSync(path.join(runtimeRoot, ".next", "server"))
+  ? ".next"
+  : fs.existsSync(path.join(runtimeRoot, "web", "server"))
+  ? "web"
+  : ".next";
+const nextRoot = path.join(runtimeRoot, nextDistDir);
+const nextServerRoot = path.join(nextRoot, "server");
+const nextAppRoot = path.join(nextServerRoot, "app");
+const nextStaticRoot = path.join(nextRoot, "static");
+const routerProjectRoot = fs.existsSync(path.join(runtimeRoot, "web", "server")) ? runtimeRoot : fallbackProjectRoot;
+const generatedRoot = path.join(runtimeRoot, "server", "generated");
+const isWasmerRuntime = fallbackProjectRoot === "/";
+
+globalThis.AsyncLocalStorage = globalThis.AsyncLocalStorage || AsyncLocalStorage;
+process.env.__NEXT_RELATIVE_DIST_DIR = process.env.__NEXT_RELATIVE_DIST_DIR || nextDistDir;
+process.chdir(routerProjectRoot);
 
 const contentTypes = {
   ".avif": "image/avif",
@@ -52,37 +73,6 @@ function routeBase(pathname) {
   return clean.slice(1);
 }
 
-function dynamicArtifacts(pathname, searchParams) {
-  const lobbyMatch = pathname.match(/^\/lobby\/([^/]+)$/);
-  if (lobbyMatch) {
-    return {
-      html: "/server/generated/lobby.html",
-      rsc: "/server/generated/lobby.rsc",
-      replacements: {
-        "__EDGE_LOBBY_ID__": safeDynamicValue(lobbyMatch[1]),
-      },
-    };
-  }
-
-  const tableMatch = pathname.match(/^\/tables\/([^/]+)$/);
-  if (tableMatch) {
-    return {
-      html: "/server/generated/table.html",
-      rsc: "/server/generated/table.rsc",
-      replacements: {
-        "__EDGE_TABLE_ID__": safeDynamicValue(tableMatch[1]),
-        "__EDGE_LOBBY_ID__": safeDynamicValue(searchParams.get("lobbyId") || "1"),
-      },
-    };
-  }
-
-  return null;
-}
-
-function safeDynamicValue(value) {
-  return /^[A-Za-z0-9_-]+$/.test(value) ? value : encodeURIComponent(value);
-}
-
 function send(res, statusCode, body, headers) {
   res.writeHead(statusCode, headers);
   res.end(body);
@@ -106,7 +96,7 @@ function sendFile(req, res, filePath, statusCode = 200, headers = {}) {
 }
 
 function sendAppArtifact(req, res, base, ext, statusCode = 200) {
-  return sendFile(req, res, path.posix.join(webRoot, "server/app", `${base}${ext}`), statusCode);
+  return sendFile(req, res, path.join(nextAppRoot, `${base}${ext}`), statusCode);
 }
 
 function proxyLocalRpc(req, res) {
@@ -115,18 +105,127 @@ function proxyLocalRpc(req, res) {
   });
 }
 
-function sendGeneratedDynamicRoute(req, res, artifacts, wantsRsc) {
-  const filePath = wantsRsc ? artifacts.rsc : artifacts.html;
+function readJsonIfExists(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function escapeRegex(value) {
+  return value.replace(/[|\\{}()[\]^$+*?.]/g, "\\$&");
+}
+
+function compileRoute(routePath) {
+  if (routePath === "/") {
+    return /^\/?$/;
+  }
+
+  const parts = routePath.split("/").filter(Boolean);
+  const pattern = parts.map((part) => {
+    if (/^\[\[\.\.\.[^\]]+\]\]$/.test(part)) {
+      return "(?:/(.*))?";
+    }
+    if (/^\[\.\.\.[^\]]+\]$/.test(part)) {
+      return "/(.+)";
+    }
+    if (/^\[[^\]]+\]$/.test(part)) {
+      return "/([^/]+)";
+    }
+    return `/${escapeRegex(part)}`;
+  }).join("");
+
+  return new RegExp(`^${pattern}/?$`);
+}
+
+function routeSpecificity(routePath) {
+  return routePath.split("/").filter(Boolean).reduce((score, part) => {
+    if (/^\[\[?\.\.\./.test(part)) return score;
+    if (/^\[/.test(part)) return score + 1;
+    return score + 2;
+  }, 0);
+}
+
+function loadSsrRoutes() {
+  const appPathRoutes = readJsonIfExists(path.join(nextRoot, "app-path-routes-manifest.json"));
+  const appPaths = readJsonIfExists(path.join(nextServerRoot, "app-paths-manifest.json"));
+  if (!appPathRoutes || !appPaths) {
+    return [];
+  }
+
+  return Object.entries(appPathRoutes)
+    .filter(([appPath, routePath]) => appPath.endsWith("/page") && typeof routePath === "string")
+    .map(([appPath, routePath]) => {
+      const modulePath = appPaths[appPath];
+      return modulePath ? {
+        appPath,
+        routePath,
+        modulePath: path.join(nextServerRoot, modulePath),
+        regex: compileRoute(routePath),
+        specificity: routeSpecificity(routePath),
+      } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.specificity - a.specificity || b.routePath.length - a.routePath.length);
+}
+
+const ssrRoutes = loadSsrRoutes();
+
+function traceSsrRequest(event) {
+  const detail = Object.entries(event)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
+  console.error(`[edge:ssr] ${detail}`);
+}
+
+function matchSsrRoute(pathname) {
+  return ssrRoutes.find((route) => route.regex.test(pathname)) || null;
+}
+
+function loadGeneratedDynamicRoutes() {
+  const manifest = readJsonIfExists(path.join(generatedRoot, "dynamic-routes.json"));
+  if (!manifest || !Array.isArray(manifest.routes)) {
+    return [];
+  }
+
+  return manifest.routes.map((route) => ({
+    ...route,
+    regex: compileRoute(route.routePath),
+    specificity: routeSpecificity(route.routePath),
+  })).sort((a, b) => b.specificity - a.specificity || b.routePath.length - a.routePath.length);
+}
+
+const generatedDynamicRoutes = loadGeneratedDynamicRoutes();
+
+function matchGeneratedDynamicRoute(pathname) {
+  for (const route of generatedDynamicRoutes) {
+    const match = route.regex.exec(pathname);
+    if (match) {
+      return { route, captures: match.slice(1) };
+    }
+  }
+  return null;
+}
+
+function safeDynamicValue(value) {
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : encodeURIComponent(value);
+}
+
+function sendGeneratedDynamicRoute(req, res, matchedRoute, wantsRsc) {
+  const { route, captures } = matchedRoute;
+  const fileName = wantsRsc ? route.rsc : route.html;
+  const filePath = path.join(generatedRoot, fileName);
   if (!fileExists(filePath)) {
-    send(res, 500, "Next dynamic route shell is missing. Run `npm run edge:build`.\n", {
-      "content-type": "text/plain; charset=utf-8",
-    });
-    return true;
+    return false;
   }
 
   let body = req.method === "HEAD" ? "" : fs.readFileSync(filePath, "utf8");
-  for (const [placeholder, value] of Object.entries(artifacts.replacements)) {
-    body = body.split(placeholder).join(value);
+  for (let index = 0; index < route.params.length; index++) {
+    const param = route.params[index];
+    const captured = captures[index] || "";
+    body = body.split(param.placeholder).join(safeDynamicValue(captured));
   }
 
   send(res, 200, body, {
@@ -136,30 +235,75 @@ function sendGeneratedDynamicRoute(req, res, artifacts, wantsRsc) {
   return true;
 }
 
-function handle(req, res) {
-  if (req.method !== "GET" && req.method !== "HEAD") {
+async function renderSsrRoute(req, res, route) {
+  if (!fileExists(route.modulePath)) {
+    send(res, 500, `Next SSR route module is missing for ${route.routePath}.\n`, {
+      "content-type": "text/plain; charset=utf-8",
+    });
+    return true;
+  }
+
+  try {
+    const routeModule = require(route.modulePath);
+    if (!routeModule || typeof routeModule.handler !== "function") {
+      send(res, 500, `Next SSR route module has no handler for ${route.routePath}.\n`, {
+        "content-type": "text/plain; charset=utf-8",
+      });
+      return true;
+    }
+
+    await routeModule.handler(req, res, { waitUntil: () => {} });
+    return true;
+  } catch (error) {
+    if (!res.headersSent) {
+      send(res, 500, error && error.stack ? error.stack : String(error), {
+        "content-type": "text/plain; charset=utf-8",
+      });
+    } else {
+      res.end();
+    }
+    return true;
+  }
+}
+
+async function handle(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+  const pathname = decodeURIComponent(url.pathname);
+  const isReadMethod = req.method === "GET" || req.method === "HEAD";
+
+  if (pathname === "/local-rpc") {
+    return proxyLocalRpc(req, res);
+  }
+
+  if (!isReadMethod) {
+    if (isWasmerRuntime) {
+      return send(res, 405, "Method not allowed\n", {
+        "allow": "GET, HEAD",
+        "content-type": "text/plain; charset=utf-8",
+      });
+    }
+
+    const ssrRoute = matchSsrRoute(pathname);
+    if (ssrRoute) {
+      await renderSsrRoute(req, res, ssrRoute);
+      return;
+    }
+
     return send(res, 405, "Method not allowed\n", {
       "allow": "GET, HEAD",
       "content-type": "text/plain; charset=utf-8",
     });
   }
 
-  const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
-  const pathname = decodeURIComponent(url.pathname);
-
-  if (pathname === "/local-rpc") {
-    return proxyLocalRpc(req, res);
-  }
-
   if (pathname.startsWith("/_next/static/")) {
-    const filePath = safeJoin(path.posix.join(webRoot, "static"), pathname.slice("/_next/static/".length));
+    const filePath = safeJoin(nextStaticRoot, pathname.slice("/_next/static/".length));
     if (sendFile(req, res, filePath, 200, { "cache-control": "public, max-age=31536000, immutable" })) {
       return;
     }
   }
 
   if (pathname === "/favicon.ico") {
-    if (sendFile(req, res, path.posix.join(webRoot, "server/app/favicon.ico.body"), 200, {
+    if (sendFile(req, res, path.join(nextAppRoot, "favicon.ico.body"), 200, {
       "content-type": "image/x-icon",
       "cache-control": "public, max-age=0, must-revalidate",
     })) {
@@ -181,7 +325,7 @@ function handle(req, res) {
 
   const wantsRsc = req.headers.rsc === "1" || url.searchParams.has("_rsc");
   const staticBase = routeBase(pathname);
-  const base = fileExists(path.posix.join(webRoot, "server/app", `${staticBase}.html`)) ? staticBase : null;
+  const base = fileExists(path.join(nextAppRoot, `${staticBase}.html`)) ? staticBase : null;
 
   if (base) {
     if (wantsRsc && sendAppArtifact(req, res, base, ".rsc")) {
@@ -192,9 +336,32 @@ function handle(req, res) {
     }
   }
 
-  const dynamicArtifactsForPath = dynamicArtifacts(pathname, url.searchParams);
-  if (dynamicArtifactsForPath) {
-    sendGeneratedDynamicRoute(req, res, dynamicArtifactsForPath, wantsRsc);
+  const generatedRoute = isWasmerRuntime ? matchGeneratedDynamicRoute(pathname) : null;
+  if (generatedRoute && sendGeneratedDynamicRoute(req, res, generatedRoute, wantsRsc)) {
+    traceSsrRequest({
+      mode: "generated",
+      ssrRendered: false,
+      method: req.method,
+      path: pathname,
+      route: generatedRoute.route.routePath,
+      rsc: wantsRsc,
+      runtime: isWasmerRuntime ? "wasmer" : "node",
+    });
+    return;
+  }
+
+  const ssrRoute = matchSsrRoute(pathname);
+  if (ssrRoute) {
+    traceSsrRequest({
+      mode: "live",
+      ssrRendered: true,
+      method: req.method,
+      path: pathname,
+      route: ssrRoute.routePath,
+      rsc: wantsRsc,
+      runtime: isWasmerRuntime ? "wasmer" : "node",
+    });
+    await renderSsrRoute(req, res, ssrRoute);
     return;
   }
 

@@ -5,28 +5,68 @@ const { AsyncLocalStorage } = require("async_hooks");
 
 const projectRoot = path.resolve(__dirname, "..");
 const outputDir = path.join(__dirname, "generated");
+const manifestFile = path.join(outputDir, "dynamic-routes.json");
+const nextRoot = path.join(projectRoot, ".next");
+const nextServerRoot = path.join(nextRoot, "server");
 
 globalThis.AsyncLocalStorage = globalThis.AsyncLocalStorage || AsyncLocalStorage;
 process.env.__NEXT_RELATIVE_DIST_DIR = ".next";
 process.chdir(projectRoot);
 
-const routes = [
-  {
-    modulePath: ".next/server/app/(site)/lobby/[id]/page.js",
-    url: "/lobby/__EDGE_LOBBY_ID__",
-    html: "lobby.html",
-    rsc: "lobby.rsc",
-  },
-  {
-    modulePath: ".next/server/app/tables/[id]/page.js",
-    url: "/tables/__EDGE_TABLE_ID__?lobbyId=__EDGE_LOBBY_ID__",
-    html: "table.html",
-    rsc: "table.rsc",
-  },
-];
+function readJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function sanitizeSlug(routePath) {
+  return (routePath === "/" ? "index" : routePath)
+    .replace(/^\/+/, "")
+    .replace(/\[\[\.\.\.([^\]]+)\]\]/g, "optional-catchall-$1")
+    .replace(/\[\.\.\.([^\]]+)\]/g, "catchall-$1")
+    .replace(/\[([^\]]+)\]/g, "$1")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "index";
+}
+
+function placeholderForParam(name) {
+  return `__EDGE_PARAM_${name.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}__`;
+}
+
+function shellUrlForRoute(routePath) {
+  const params = [];
+  const parts = routePath.split("/").filter(Boolean);
+  const renderedParts = parts.map((part) => {
+    let match = part.match(/^\[\[\.\.\.([^\]]+)\]\]$/);
+    if (match) {
+      const placeholder = placeholderForParam(match[1]);
+      params.push({ name: match[1], placeholder, catchAll: true, optional: true });
+      return placeholder;
+    }
+
+    match = part.match(/^\[\.\.\.([^\]]+)\]$/);
+    if (match) {
+      const placeholder = placeholderForParam(match[1]);
+      params.push({ name: match[1], placeholder, catchAll: true, optional: false });
+      return placeholder;
+    }
+
+    match = part.match(/^\[([^\]]+)\]$/);
+    if (match) {
+      const placeholder = placeholderForParam(match[1]);
+      params.push({ name: match[1], placeholder, catchAll: false, optional: false });
+      return placeholder;
+    }
+
+    return part;
+  });
+
+  return {
+    url: `/${renderedParts.join("/")}`,
+    params,
+  };
+}
 
 function renderWithModule(route, headers = {}) {
-  const routeModule = require(path.join(projectRoot, route.modulePath));
+  const routeModule = require(path.join(nextServerRoot, route.modulePath));
 
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
@@ -60,20 +100,42 @@ function renderWithModule(route, headers = {}) {
 }
 
 async function main() {
+  const appPathRoutes = readJson(path.join(nextRoot, "app-path-routes-manifest.json"));
+  const appPaths = readJson(path.join(nextServerRoot, "app-paths-manifest.json"));
+  const routes = [];
+
+  fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
-  for (const route of routes) {
-    if (!fs.existsSync(path.join(projectRoot, route.modulePath))) {
-      console.warn(`Skipping ${route.url}: ${route.modulePath} was not emitted by next build`);
+  for (const [appPath, routePath] of Object.entries(appPathRoutes)) {
+    if (!appPath.endsWith("/page") || !routePath.includes("[")) {
       continue;
     }
 
-    const html = await renderWithModule(route);
-    fs.writeFileSync(path.join(outputDir, route.html), html);
+    const modulePath = appPaths[appPath];
+    if (!modulePath || !fs.existsSync(path.join(nextServerRoot, modulePath))) {
+      console.warn(`Skipping ${routePath}: ${modulePath || appPath} was not emitted by next build`);
+      continue;
+    }
 
-    const rsc = await renderWithModule(route, { rsc: "1" });
-    fs.writeFileSync(path.join(outputDir, route.rsc), rsc);
+    const slug = sanitizeSlug(routePath);
+    const shell = shellUrlForRoute(routePath);
+    const route = {
+      appPath,
+      routePath,
+      modulePath,
+      url: shell.url,
+      html: `${slug}.html`,
+      rsc: `${slug}.rsc`,
+      params: shell.params,
+    };
+
+    fs.writeFileSync(path.join(outputDir, route.html), await renderWithModule(route));
+    fs.writeFileSync(path.join(outputDir, route.rsc), await renderWithModule(route, { rsc: "1" }));
+    routes.push(route);
   }
+
+  fs.writeFileSync(manifestFile, `${JSON.stringify({ routes }, null, 2)}\n`);
 }
 
 main().catch((error) => {

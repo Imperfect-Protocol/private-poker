@@ -1,0 +1,36 @@
+{
+  "routes": [
+    {
+      "appPath": "/(site)/lobby/[id]/page",
+      "routePath": "/lobby/[id]",
+      "modulePath": "app/(site)/lobby/[id]/page.js",
+      "url": "/lobby/__EDGE_PARAM_ID__",
+      "html": "lobby-id.html",
+      "rsc": "lobby-id.rsc",
+      "params": [
+        {
+          "name": "id",
+          "placeholder": "__EDGE_PARAM_ID__",
+          "catchAll": false,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "appPath": "/tables/[id]/page",
+      "routePath": "/tables/[id]",
+      "modulePath": "app/tables/[id]/page.js",
+      "url": "/tables/__EDGE_PARAM_ID__",
+      "html": "tables-id.html",
+      "rsc": "tables-id.rsc",
+      "params": [
+        {
+          "name": "id",
+          "placeholder": "__EDGE_PARAM_ID__",
+          "catchAll": false,
+          "optional": false
+        }
+      ]
+    }
+  ]
+}
