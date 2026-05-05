@@ -4,14 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "edge:build": "next build && node server/pre-render-pages.cjs && node server/build-edge-dist.cjs",
-    "edge:stage": "node server/build-edge-dist.cjs",
+    "build": "next build && mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/static && cp -R public .next/standalone/public",
+    "start": "node .next/standalone/server.js",
     "edge:preview": "wasmer run --net .",
     "lint": "eslint",
-    "signal": "node server/signal-server.js",
-    "dev:all": "npx concurrently \"npm run dev\" \"npm run signal\""
+    "dev:all": "npm run dev"
   },
   "dependencies": {
     "@noble/bls12-381": "^1.4.0",

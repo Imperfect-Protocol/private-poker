@@ -4,13 +4,10 @@ version = "0.1.1"
 description = "Private Poker (Next)"
 
 [dependencies]
-"sadhbh-c0d3/edgejs-quickjs" = "^0.0.1"
+"sadhbh-c0d3/edgejs-quickjs" = "^0.0.3"
 
 [fs]
-"/.next" = ".dist/.next"
-"/node_modules" = ".dist/node_modules"
-"/public" = ".dist/public"
-"/server" = ".dist/server"
+"/app" = ".next/standalone"
 
 [[command]]
 name = "run"
@@ -18,4 +15,4 @@ module = "sadhbh-c0d3/edgejs-quickjs:edge"
 runner = "https://webc.org/runner/wasi"
 
 [command.annotations.wasi]
-main-args = ["/server/router.cjs"]
+main-args = ["/app/server.js"]
