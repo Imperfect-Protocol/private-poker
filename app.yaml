@@ -1,5 +1,5 @@
-kind: wasmer.io/App.v0
 name: app-sadhbh-c0d3-260324
+app_id: da_nZyIPt1UDvX3
 owner: sadhbh-c0d3
 package: .
-app_id: da_nZyIPt1UDvX3
+kind: wasmer.io/App.v0

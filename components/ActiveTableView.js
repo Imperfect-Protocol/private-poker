@@ -50,6 +50,16 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId }
 
     const getRandomCard = () => ranks[Math.floor(Math.random() * ranks.length)] + suits[Math.floor(Math.random() * suits.length)];
     const newFlop = getRandomCard() + getRandomCard() + getRandomCard();
+    const newHand = getRandomCard() + getRandomCard();
+
+    setLiveTableData(prev => ({
+      ...prev,
+      current_hand: {
+        ...prev.current_hand,
+        community_cards: newFlop,
+        player_cards: newHand
+      }
+    }));
 
     sendMessage({
       type: "GAME_UPDATE",
@@ -80,7 +90,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId }
         <PokerTable tableData={liveTableData} currentUserAddress={address} />
 
         {/* --- P2P DEBUG CHAT TERMINAL --- */}
-        <div className="absolute bottom-[0px] left-[0px] w-64 h-48 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-50">
+        <div className="absolute bottom-[0px] right-[0px] w-64 h-48 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-50">
           <div className="bg-slate-950 px-3 py-1 border-b border-teal-500/10 flex justify-between">
             <span className="text-[9px] font-mono text-teal-500 uppercase">Comm_Link</span>
             <span className="text-[9px] font-mono text-slate-600">ID: {tableId}</span>
