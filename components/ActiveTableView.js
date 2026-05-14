@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import PokerTable from '@/components/PokerTable';
 import PokerActionBar from '@/components/PokerActionBar';
 import { useConnection } from 'wagmi';
-import { usePokerRTC } from '@/hooks/usePokerRTC';
+import { usePokerRTC } from '@/hooks/usePokerRtc';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 
 // 1. Correct the name and accept the pre-fetched `tableData`
@@ -21,7 +21,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId }
   const tableId = liveTableData.id;
 
   // 3. Initialize RTC
-  const { status, sendMessage } = usePokerRTC(tableId, blsKeys, (incoming) => {
+  const { status, sendMessage } = usePokerRTC(tableId, lobbyId, blsKeys, null, null, (incoming) => {
     if (incoming.type === "GAME_UPDATE") {
       setLiveTableData(prev => ({
         ...prev,
