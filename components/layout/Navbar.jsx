@@ -1,5 +1,4 @@
-
-import WalletAuth from './WalletAuth'
+import WalletAuth from '@/components/wallet/WalletAuth'
 import Link from 'next/link'
 
 export default function Navbar() {
@@ -26,7 +25,7 @@ export default function Navbar() {
           <Link href="/leaderboard" className="hover:text-teal-400 transition-colors">Rankings</Link>
           <Link href="/about" className="hover:text-teal-400 transition-colors">About</Link>
         </div>
-        
+
       </div>
 
       <WalletAuth />

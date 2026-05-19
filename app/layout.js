@@ -1,13 +1,12 @@
-import { Web3Provider } from '@/components/Web3Provider';
+// app/layout.js
+import { Providers } from '@/components/Providers';
 import './globals.css';
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="bg-slate-950 text-slate-100">
-        <Web3Provider>
-          {children}
-        </Web3Provider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

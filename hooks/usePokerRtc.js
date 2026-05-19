@@ -1,85 +1,261 @@
-"use client";
-import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConnection } from 'wagmi';
+import { hexToBytes, toHex } from 'viem';
+import { useListenForSignals } from '@/hooks/usePrivatePokerSignal';
+import { decryptFromPeer, encryptForPeer } from '@/lib/crypto';
+import {
+  DEFAULT_RTC_TOPOLOGY,
+  getRtcTopologyLabel,
+  getRtcTopologyPlan,
+} from '@/lib/rtcTopology';
 
-export const usePokerRTC = (roomId, onMessageReceived) => {
-  const [status, setStatus] = useState("initializing");
-  const socketRef = useRef();
-  const pcRef = useRef();
-  const dcRef = useRef();
+const RTC_CONFIG = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+};
+
+const MAX_PROCESSED_SIGNALS = 300;
+const normalizeAddress = (value) => value?.toLowerCase() ?? '';
+
+const waitForIceGatheringComplete = (pc) => {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let timeout;
+
+    const finish = () => {
+      clearTimeout(timeout);
+      pc.removeEventListener('icegatheringstatechange', handleStateChange);
+      resolve();
+    };
+
+    const handleStateChange = () => {
+      if (pc.iceGatheringState === 'complete') {
+        finish();
+      }
+    };
+
+    timeout = setTimeout(finish, 8000);
+    pc.addEventListener('icegatheringstatechange', handleStateChange);
+  });
+};
+
+export function usePokerRTC(
+  tableId,
+  lobbyId,
+  blsKeys,
+  players = [],
+  onMessage,
+  topology = DEFAULT_RTC_TOPOLOGY,
+) {
+  const { address } = useConnection();
+  const publicKey = blsKeys?.publicKey;
+  const privateKey = blsKeys?.privateKey;
+  const [hasConnectionError, setHasConnectionError] = useState(false);
+  const [connectedPeerCount, setConnectedPeerCount] = useState(0);
+
+  const channelsRef = useRef(new Map());
+  const connectedPeersRef = useRef(new Set());
+  const initiatedPeersRef = useRef(new Set());
+  const peerConnectionsRef = useRef(new Map());
+  const processedSignalsRef = useRef(new Set());
+  const onMessageRef = useRef(onMessage);
 
   useEffect(() => {
-    socketRef.current = io("http://localhost:3001", { transports: ["websocket"] });
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
-    const initPeerConnection = async (peerId, isOffer) => {
-      pcRef.current = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  const topologyPlan = useMemo(
+    () => getRtcTopologyPlan(players, address, topology),
+    [address, players, topology],
+  );
+
+  const expectedPeerAddresses = useMemo(() => {
+    return topologyPlan.expectedPeers.map((player) => player.address);
+  }, [topologyPlan]);
+
+  const setPeerConnected = useCallback((peerAddress) => {
+    setHasConnectionError(false);
+    connectedPeersRef.current.add(normalizeAddress(peerAddress));
+    setConnectedPeerCount(connectedPeersRef.current.size);
+  }, []);
+
+  const status = useMemo(() => {
+    if (hasConnectionError) return 'error';
+
+    if (!address || !privateKey || !publicKey) {
+      return 'waiting';
+    }
+
+    const expectedCount = expectedPeerAddresses.length;
+    if (connectedPeerCount > 0 && (expectedCount === 0 || connectedPeerCount >= expectedCount)) {
+      return 'connected';
+    }
+
+    if (topologyPlan.seatedPlayers.length < 2) {
+      return 'waiting';
+    }
+
+    return 'connecting';
+  }, [
+    address,
+    connectedPeerCount,
+    expectedPeerAddresses.length,
+    hasConnectionError,
+    privateKey,
+    publicKey,
+    topologyPlan.seatedPlayers.length,
+  ]);
+
+  const setupDataChannel = useCallback((peerAddress, dataChannel) => {
+    dataChannel.onopen = () => {
+      channelsRef.current.set(normalizeAddress(peerAddress), dataChannel);
+      setPeerConnected(peerAddress);
+    };
+
+    dataChannel.onclose = () => {
+      channelsRef.current.delete(normalizeAddress(peerAddress));
+      connectedPeersRef.current.delete(normalizeAddress(peerAddress));
+      setConnectedPeerCount(connectedPeersRef.current.size);
+    };
+
+    dataChannel.onmessage = (event) => {
+      try {
+        onMessageRef.current?.(JSON.parse(event.data));
+      } catch (error) {
+        console.error('Failed to parse RTC message:', error);
+      }
+    };
+  }, [setPeerConnected]);
+
+  const getPeerConnection = useCallback((peerAddress, createChannel = false) => {
+    const key = normalizeAddress(peerAddress);
+    const existing = peerConnectionsRef.current.get(key);
+    if (existing) return existing;
+
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        setHasConnectionError(true);
+      }
+    };
+    pc.ondatachannel = (event) => setupDataChannel(peerAddress, event.channel);
+
+    if (createChannel) {
+      setupDataChannel(peerAddress, pc.createDataChannel('poker-token-ring'));
+    }
+
+    peerConnectionsRef.current.set(key, pc);
+    return pc;
+  }, [setupDataChannel]);
+
+  const encryptSignalForPeer = useCallback(async (recipientPubKey, signal) => {
+    if (!publicKey) return;
+    if (!recipientPubKey) return;
+
+    const payload = JSON.stringify({
+      ...signal,
+      app: 'private-poker',
+      version: 1,
+      senderPubKey: publicKey,
+    });
+    const encryptedPayload = await encryptForPeer(recipientPubKey, payload);
+    return toHex(new TextEncoder().encode(JSON.stringify(encryptedPayload)));
+  }, [publicKey]);
+
+  const handleIncomingSignal = useCallback(async (senderAddress, signal) => {
+    const peerPubKey = signal.senderPubKey;
+    const pc = getPeerConnection(senderAddress, false);
+
+    if (signal.type === 'offer') {
+      if (!peerPubKey) throw new Error('Incoming offer did not include senderPubKey.');
+
+      await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await waitForIceGatheringComplete(pc);
+
+      console.warn('Received RTC offer, but automatic on-chain answer signalling is disabled.');
+      return;
+    }
+
+    if (signal.type === 'answer') {
+      await pc.setRemoteDescription({ type: 'answer', sdp: signal.sdp });
+      return;
+    }
+
+    if (signal.type === 'ice-candidate' && signal.candidate) {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  }, [getPeerConnection]);
+
+  useListenForSignals(address, async (signalData) => {
+    if (!privateKey || !tableId || !lobbyId) return;
+    if (signalData.tableId !== tableId.toString() || signalData.lobbyId !== lobbyId.toString()) return;
+    if (signalData.logId && processedSignalsRef.current.has(signalData.logId)) return;
+    if (signalData.logId) {
+      processedSignalsRef.current.add(signalData.logId);
+      if (processedSignalsRef.current.size > MAX_PROCESSED_SIGNALS) {
+        const [oldestSignalId] = processedSignalsRef.current;
+        processedSignalsRef.current.delete(oldestSignalId);
+      }
+    }
+
+    try {
+      const payloadString = new TextDecoder().decode(hexToBytes(signalData.encryptedData));
+      const encryptedPayload = JSON.parse(payloadString);
+      const decryptedString = await decryptFromPeer(privateKey, encryptedPayload);
+      const signal = JSON.parse(decryptedString);
+
+      await handleIncomingSignal(signalData.sender, signal);
+    } catch (error) {
+      console.error('Failed to decrypt RTC signal:', error);
+    }
+  });
+
+  useEffect(() => {
+    const channels = channelsRef.current;
+    const connectedPeers = connectedPeersRef.current;
+    const initiatedPeers = initiatedPeersRef.current;
+    const peerConnections = peerConnectionsRef.current;
+    const processedSignals = processedSignalsRef.current;
+
+    return () => {
+      channels.forEach((channel) => {
+        channel.onopen = null;
+        channel.onclose = null;
+        channel.onmessage = null;
+        channel.close();
       });
-
-      pcRef.current.onicecandidate = (e) => {
-        if (e.candidate) {
-          socketRef.current.emit("signal", { to: peerId, signal: { type: "ice", candidate: e.candidate } });
-        }
-      };
-
-      pcRef.current.oniceconnectionstatechange = () => {
-        if (pcRef.current.iceConnectionState === "connected") setStatus("connected");
-      };
-
-      if (isOffer) {
-        dcRef.current = pcRef.current.createDataChannel("poker-data");
-        setupDataChannel(dcRef.current);
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
-        socketRef.current.emit("signal", { to: peerId, signal: offer });
-      } else {
-        pcRef.current.ondatachannel = (e) => {
-          dcRef.current = e.channel;
-          setupDataChannel(dcRef.current);
-        };
-      }
+      peerConnections.forEach((pc) => {
+        pc.onconnectionstatechange = null;
+        pc.ondatachannel = null;
+        pc.close();
+      });
+      channels.clear();
+      connectedPeers.clear();
+      initiatedPeers.clear();
+      peerConnections.clear();
+      processedSignals.clear();
     };
+  }, [lobbyId, tableId]);
 
-    socketRef.current.on("connect", () => {
-      socketRef.current.emit("join-room", roomId);
-    });
+  const sendMessage = useCallback((message) => {
+    const payload = JSON.stringify(message);
 
-    // If we join and others are there, we initiate
-    socketRef.current.on("existing-peers", (peers) => {
-      peers.forEach(id => initPeerConnection(id, true));
-    });
-
-    // If we are there and someone else joins, they will initiate (or we can)
-    socketRef.current.on("player-joined", (id) => {
-      console.log("Peer found:", id);
-      // We wait for their offer
-    });
-
-    socketRef.current.on("signal", async ({ from, signal }) => {
-      if (signal.type === "offer") {
-        if (!pcRef.current) await initPeerConnection(from, false);
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-        const answer = await pcRef.current.createAnswer();
-        await pcRef.current.setLocalDescription(answer);
-        socketRef.current.emit("signal", { to: from, signal: answer });
-      } else if (signal.type === "answer") {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-      } else if (signal.type === "ice") {
-        await pcRef.current?.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    channelsRef.current.forEach((channel) => {
+      if (channel.readyState === 'open') {
+        channel.send(payload);
       }
     });
+  }, []);
 
-    const setupDataChannel = (channel) => {
-      channel.onopen = () => setStatus("connected");
-      channel.onmessage = (e) => onMessageReceived && onMessageReceived(JSON.parse(e.data));
-    };
-
-    return () => socketRef.current.disconnect();
-  }, [roomId]);
-
-  const sendMessage = (data) => {
-    if (dcRef.current?.readyState === "open") dcRef.current.send(JSON.stringify(data));
+  return {
+    connectedPeerCount,
+    expectedPeerCount: expectedPeerAddresses.length,
+    sendMessage,
+    status,
+    topology: topologyPlan.topology,
+    topologyLabel: getRtcTopologyLabel(topologyPlan.topology),
   };
-
-  return { status, sendMessage };
-};
+}
