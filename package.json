@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build && mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/static && cp -R public .next/standalone/public",
     "start": "node .next/standalone/server.js",
-    "edge:preview": "wasmer run --net .",
+    "wasmer": "wasmer run --net --stack-size 16384000 .",
     "lint": "eslint",
     "dev:all": "npm run dev"
   },
