@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from 'wagmi';
 import { hexToBytes, toHex } from 'viem';
-import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
+import { useListenForSignals } from '@/hooks/usePrivatePokerSignal';
 import { decryptFromPeer, encryptForPeer } from '@/lib/crypto';
 import {
   DEFAULT_RTC_TOPOLOGY,
@@ -48,7 +48,6 @@ export function usePokerRTC(
   topology = DEFAULT_RTC_TOPOLOGY,
 ) {
   const { address } = useConnection();
-  const { sendSignal } = usePrivatePokerSignal();
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
   const [hasConnectionError, setHasConnectionError] = useState(false);
@@ -163,36 +162,6 @@ export function usePokerRTC(
     return toHex(new TextEncoder().encode(JSON.stringify(encryptedPayload)));
   }, [publicKey]);
 
-  const sendEncryptedSignal = useCallback(async (recipientAddress, recipientPubKey, signal) => {
-    if (!recipientAddress) return;
-
-    const encryptedData = await encryptSignalForPeer(recipientPubKey, signal);
-    if (!encryptedData) return;
-
-    await sendSignal(lobbyId, tableId, recipientAddress, encryptedData);
-  }, [encryptSignalForPeer, lobbyId, sendSignal, tableId]);
-
-  const sendEncryptedSignals = useCallback(async (signals) => {
-    const encryptedSignals = await Promise.all(
-      signals.map(async ({ recipientAddress, recipientPubKey, signal }) => ({
-        recipientAddress,
-        encryptedData: await encryptSignalForPeer(recipientPubKey, signal),
-      })),
-    );
-    const readySignals = encryptedSignals.filter(
-      ({ recipientAddress, encryptedData }) => recipientAddress && encryptedData,
-    );
-
-    if (readySignals.length === 0) return;
-
-    await sendSignal(
-      lobbyId,
-      tableId,
-      readySignals.map(({ recipientAddress }) => recipientAddress),
-      readySignals.map(({ encryptedData }) => encryptedData),
-    );
-  }, [encryptSignalForPeer, lobbyId, sendSignal, tableId]);
-
   const handleIncomingSignal = useCallback(async (senderAddress, signal) => {
     const peerPubKey = signal.senderPubKey;
     const pc = getPeerConnection(senderAddress, false);
@@ -206,10 +175,7 @@ export function usePokerRTC(
       await pc.setLocalDescription(answer);
       await waitForIceGatheringComplete(pc);
 
-      await sendEncryptedSignal(senderAddress, peerPubKey, {
-        type: 'answer',
-        sdp: pc.localDescription.sdp,
-      });
+      console.warn('Received RTC offer, but automatic on-chain answer signalling is disabled.');
       return;
     }
 
@@ -221,7 +187,7 @@ export function usePokerRTC(
     if (signal.type === 'ice-candidate' && signal.candidate) {
       await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
     }
-  }, [getPeerConnection, sendEncryptedSignal]);
+  }, [getPeerConnection]);
 
   useListenForSignals(address, async (signalData) => {
     if (!privateKey || !tableId || !lobbyId) return;
@@ -246,60 +212,6 @@ export function usePokerRTC(
       console.error('Failed to decrypt RTC signal:', error);
     }
   });
-
-  useEffect(() => {
-    if (!address || !publicKey || !tableId || !lobbyId) return;
-    if (topologyPlan.seatedPlayers.length < 2) return;
-
-    const targets = topologyPlan.outboundTargets
-      .filter((player) => player?.address && player?.annoncePublicKey)
-      .filter((player) => !initiatedPeersRef.current.has(normalizeAddress(player.address)));
-
-    if (targets.length === 0) return;
-
-    targets.forEach((target) => {
-      initiatedPeersRef.current.add(normalizeAddress(target.address));
-    });
-
-    const initiate = async () => {
-      try {
-        setHasConnectionError(false);
-        const outboundSignals = await Promise.all(targets.map(async (target) => {
-          const pc = getPeerConnection(target.address, true);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          await waitForIceGatheringComplete(pc);
-
-          return {
-            recipientAddress: target.address,
-            recipientPubKey: target.annoncePublicKey,
-            signal: {
-              type: 'offer',
-              sdp: pc.localDescription.sdp,
-            },
-          };
-        }));
-
-        await sendEncryptedSignals(outboundSignals);
-      } catch (error) {
-        targets.forEach((target) => {
-          initiatedPeersRef.current.delete(normalizeAddress(target.address));
-        });
-        console.error('Failed to initiate chain-signaled WebRTC:', error);
-        setHasConnectionError(true);
-      }
-    };
-
-    initiate();
-  }, [
-    address,
-    getPeerConnection,
-    lobbyId,
-    publicKey,
-    sendEncryptedSignals,
-    tableId,
-    topologyPlan,
-  ]);
 
   useEffect(() => {
     const channels = channelsRef.current;

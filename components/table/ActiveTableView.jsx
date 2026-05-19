@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TableScreen from '@/components/table_screen/Component';
 import { useConnection } from 'wagmi';
 import { usePokerRTC } from '@/hooks/usePokerRTC';
-import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 
 const hasAnnounceKey = (player) => {
@@ -30,11 +29,10 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     tableId,
     tableName: liveTableData.name,
     buyIn: liveTableData.buyin,
-    stakesLabel: `Buy-in ${liveTableData.buyin}`,
-  }), [lobbyId, liveTableData.buyin, liveTableData.name, tableId]);
+    blinds: liveTableData.blinds,
+    stakesLabel: liveTableData.stakes,
+  }), [lobbyId, liveTableData.blinds, liveTableData.buyin, liveTableData.name, liveTableData.stakes, tableId]);
   const { blsKeys, isGenerating, generateKeys } = useRequireBLS(tableSessionDetails);
-  const { setTablePlayerAnnoncePublicKey } = usePrivatePokerLobby();
-  const [isPublishingNetworkKey, setIsPublishingNetworkKey] = useState(false);
   const promptedSessionRef = useRef(null);
   const currentPlayer = useMemo(() => {
     return liveTableData.players?.find(
@@ -55,46 +53,29 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
 
   const joinNetwork = useCallback(async ({ force = false } = {}) => {
     if (!currentPlayer) return;
-    if (currentUserNetworkJoined || isGenerating || isPublishingNetworkKey || !tableSessionDetails.tableId) return;
+    if (currentUserNetworkJoined || isGenerating || !tableSessionDetails.tableId) return;
     if (!force && promptedSessionRef.current === tableSessionDetails.tableId) return;
 
     promptedSessionRef.current = tableSessionDetails.tableId;
     try {
-      const keys = await generateKeys();
-      const publicKeyBytes = `0x${keys.publicKey}`;
-      if (!hasAnnounceKey(currentPlayer) || currentPlayer.annoncePublicKey?.toLowerCase() !== publicKeyBytes.toLowerCase()) {
-        setIsPublishingNetworkKey(true);
-        await setTablePlayerAnnoncePublicKey(lobbyId, tableId, publicKeyBytes);
-        setLiveTableData((current) => ({
-          ...current,
-          players: current.players.map((player) => (
-            player.address?.toLowerCase() === address?.toLowerCase()
-              ? { ...player, annoncePublicKey: publicKeyBytes }
-              : player
-          )),
-        }));
+      await generateKeys();
+      if (!hasAnnounceKey(currentPlayer)) {
+        console.warn('This table entry does not have an announce public key on-chain. Rejoin/create must pass the table-scoped key in the table transaction.');
       }
     } catch (error) {
       console.error('Failed to authorize table BLS session:', error);
-    } finally {
-      setIsPublishingNetworkKey(false);
     }
   }, [
-    address,
     currentPlayer,
     currentUserNetworkJoined,
     generateKeys,
     isGenerating,
-    isPublishingNetworkKey,
-    lobbyId,
-    setTablePlayerAnnoncePublicKey,
-    tableId,
     tableSessionDetails.tableId,
   ]);
 
   useEffect(() => {
     if (!currentPlayer) return;
-    if (currentUserNetworkJoined || isGenerating || isPublishingNetworkKey || !tableSessionDetails.tableId) return;
+    if (currentUserNetworkJoined || isGenerating || !tableSessionDetails.tableId) return;
     if (promptedSessionRef.current === tableSessionDetails.tableId) return;
 
     const timer = setTimeout(() => {
@@ -102,7 +83,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [currentPlayer, currentUserNetworkJoined, isGenerating, isPublishingNetworkKey, joinNetwork, tableSessionDetails.tableId]);
+  }, [currentPlayer, currentUserNetworkJoined, isGenerating, joinNetwork, tableSessionDetails.tableId]);
 
   // 3. Initialize RTC
   const { connectedPeerCount, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(tableId, lobbyId, currentUserNetworkJoined ? blsKeys : null, liveTableData.players, (incoming) => {
@@ -157,7 +138,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
       currentUserBlsKey={blsKeys}
       currentUserNetworkJoined={currentUserNetworkJoined}
       currentUserNetworkStatus={status}
-      isJoiningNetwork={isGenerating || isPublishingNetworkKey}
+      isJoiningNetwork={isGenerating}
       onJoinNetwork={() => joinNetwork({ force: true })}
       status={status}
       expectedPeerCount={expectedPeerCount}

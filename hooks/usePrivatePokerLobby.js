@@ -18,7 +18,6 @@ const LOBBY_ABI = parseAbi([
     "function addLobby(uint256 id, uint256 gameType, uint256 flags, string name)",
     "function createTable(uint256 lobby_id, uint256 table_id, string calldata name, uint256 buy_in, uint256 num_players, bytes calldata annonce_public_key)",
     "function joinTable(uint256 lobby_id, uint256 table_id, bytes calldata annonce_public_key)",
-    "function setTablePlayerAnnoncePublicKey(uint256 lobby_id, uint256 table_id, bytes calldata annonce_public_key)",
     "function removeLobby(uint256 id)",
     "function removeTable(uint256 lobbyId, uint256 tableId)",
 
@@ -263,13 +262,6 @@ export function usePrivatePokerLobby() {
         });
     };
 
-    const setTablePlayerAnnoncePublicKey = async (lobbyId, tableId, publicKeyBytes) => {
-        return await writeLobbyContract({
-            functionName: 'setTablePlayerAnnoncePublicKey',
-            args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes],
-        });
-    };
-
     const removeLobby = async (id) => {
         return await writeLobbyContract({
             functionName: 'removeLobby',
@@ -287,7 +279,7 @@ export function usePrivatePokerLobby() {
     return {
         getLobbyCount, getLobbyAt, getLobbyById,
         getTableCount, getTablesRange, getTableDetail, getPlayerTables,
-        addLobby, createTable, joinTable, setTablePlayerAnnoncePublicKey, removeLobby, removeTable,
+        addLobby, createTable, joinTable, removeLobby, removeTable,
     };
 }
 

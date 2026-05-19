@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePokerChips } from '@/hooks/usePokerChips';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
+import { useRequireBLS } from '@/hooks/useRequireBLS';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 import { getGameTypeName } from '@/lib/constants';
 import { STAKES_OPTIONS } from '@/lib/stakes';
@@ -30,6 +31,7 @@ export default function CreateTableDialog({
 
   const { createTable, getLobbyById, getTableCount, getTablesRange } = usePrivatePokerLobby();
   const { ensureBuyInAllowance } = usePokerChips();
+  const { generateKeys } = useRequireBLS();
 
   useEffect(() => {
     setFormData((current) => ({
@@ -120,6 +122,16 @@ export default function CreateTableDialog({
     try {
       setIsPending(true);
       const tableId = Date.now();
+      const keys = await generateKeys({
+        lobbyId: formData.lobbyId,
+        lobbyName: lobbyInfo.name,
+        tableId,
+        tableName: cleanName,
+        buyIn: formData.buyin,
+        blinds: formData.blinds,
+        stakesLabel: STAKES_OPTIONS.find((option) => option.buyin === formData.buyin)?.label?.split(':')[0],
+      });
+      const publicKeyBytes = `0x${keys.publicKey}`;
       await ensureBuyInAllowance(formData.buyin);
       await createTable(
         formData.lobbyId,
@@ -127,7 +139,7 @@ export default function CreateTableDialog({
         cleanName,
         formData.buyin,
         formData.maxPlayers,
-        '0x',
+        publicKeyBytes,
       );
 
       const tableData = {
@@ -136,7 +148,7 @@ export default function CreateTableDialog({
         buyin: formData.buyin,
         maxSeats: formData.maxPlayers,
         players: currentUserAddress
-          ? [{ address: currentUserAddress, chips: formData.buyin.toString(), annoncePublicKey: '0x' }]
+          ? [{ address: currentUserAddress, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
           : [],
         current_hand: { min_bet: 10, max_bet: 100, bet_step: 10, community_cards: "" },
       };

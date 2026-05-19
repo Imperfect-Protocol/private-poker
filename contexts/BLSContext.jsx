@@ -4,37 +4,57 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useConnection, useSignMessage } from 'wagmi';
 import { keccak256, toBytes, toHex } from 'viem';
 import * as bls from '@noble/bls12-381';
-import { CHAIN_ID } from '@/lib/chain';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
+const STAKES_BY_BUY_IN = [
+    { buyIn: 1, name: 'Micro Stakes', blinds: '$0.01/$0.02' },
+    { buyIn: 10, name: 'Low Stakes', blinds: '$0.10/$0.20' },
+    { buyIn: 100, name: 'Mid Stakes', blinds: '$1/$2' },
+    { buyIn: 1000, name: 'High Stakes', blinds: '$10/$20' },
+    { buyIn: 10000, name: 'Large Stakes', blinds: '$100/$200' },
+];
 
 export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     if (!tableDetails?.lobbyId || !tableDetails?.tableId || !walletAddress) return null;
     return [
-        CHAIN_ID,
         normalizeAddress(walletAddress),
         tableDetails.lobbyId,
         tableDetails.tableId,
     ].join(':');
 }
 
-function buildDerivationMessage(tableDetails, walletAddress) {
-    return `Private Poker table session key
+function getStakeDetails(tableDetails) {
+    const buyIn = Number(tableDetails.buyIn ?? tableDetails.buyin ?? 0);
+    const option = STAKES_BY_BUY_IN.find((stake) => stake.buyIn === buyIn);
 
-Sign this message to create a fresh BLS key pair for this poker table.
+    return {
+        buyInLabel: buyIn > 0 ? `$${buyIn} CHIPS` : 'Table buy-in',
+        blindsLabel: tableDetails.blindsLabel ?? tableDetails.blinds ?? option?.blinds ?? 'Table blinds',
+        stakesLabel: tableDetails.stakesLabel ?? option?.name ?? 'Table stakes',
+    };
+}
 
-This key is used only for this table's peer-to-peer WebRTC signalling and signed poker actions.
-It will not trigger a blockchain transaction or cost gas.
+function buildDerivationMessage(tableDetails) {
+    const { buyInLabel, blindsLabel, stakesLabel } = getStakeDetails(tableDetails);
 
-Wallet: ${walletAddress}
-Chain ID: ${CHAIN_ID}
-Lobby ID: ${tableDetails.lobbyId}
-Lobby: ${tableDetails.lobbyName ?? 'Private Poker Lobby'}
-Table ID: ${tableDetails.tableId}
+    return `Welcome to PrivatePoker!
+
+You are taking a seat at a peer-to-peer Private Poker table.
+
+Please sign this message to create your table BLS key pair.
+This key lets your browser join the private peer-to-peer table network,
+encrypt table messages, and sign poker actions for this table only.
+
+Table Details
+-------------
 Table: ${tableDetails.tableName ?? 'Private Poker Table'}
-Stakes: ${tableDetails.stakesLabel ?? tableDetails.buyIn ?? 'Table stakes'}
-Buy-in: ${tableDetails.buyIn ?? 'Table buy-in'}
-Purpose: table-scoped peer-to-peer poker session`;
+Table Scope: ${tableDetails.tableId}::${tableDetails.lobbyId}
+Buy-in: ${buyInLabel}
+Blinds: ${blindsLabel}
+Stakes: ${stakesLabel}
+
+This is not a blockchain transaction.
+It costs no gas and does not move chips.`;
 }
 
 const BLSContext = createContext(null);
@@ -79,7 +99,7 @@ export function BLSProvider({ children }) {
 
         try {
             const signature = await mutateAsync({
-                message: buildDerivationMessage(tableDetails, address),
+                message: buildDerivationMessage(tableDetails),
             });
             const seedHex = keccak256(signature);
             const privateKeyBytes = toBytes(seedHex);

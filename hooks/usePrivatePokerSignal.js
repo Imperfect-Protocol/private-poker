@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useWriteContract, useWatchContractEvent } from 'wagmi';
+import { useWatchContractEvent } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
 import { SIGNAL_CONTRACT_ADDRESS, CHAIN_POLLING_INTERVAL } from '@/lib/chain';
 
@@ -9,41 +9,6 @@ const SIGNAL_ABI = parseAbi([
 ]);
 
 const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
-
-export function usePrivatePokerSignal() {
-    const { mutateAsync, isPending } = useWriteContract();
-
-    const sendSignal = async (lobbyId, tableId, recipientAddresses, encryptedDataBytes) => {
-        if (!hasSignalContract) {
-            throw new Error("PrivatePokerSignal contract address is not configured.");
-        }
-
-        const recipients = Array.isArray(recipientAddresses)
-            ? recipientAddresses
-            : [recipientAddresses];
-        const encryptedData = Array.isArray(encryptedDataBytes)
-            ? encryptedDataBytes
-            : [encryptedDataBytes];
-
-        if (recipients.length !== encryptedData.length) {
-            throw new Error("Signal recipient and payload counts must match.");
-        }
-
-        return await mutateAsync({
-            address: SIGNAL_CONTRACT_ADDRESS,
-            abi: SIGNAL_ABI,
-            functionName: 'send_signal',
-            args: [
-                BigInt(lobbyId),
-                BigInt(tableId),
-                recipients,
-                encryptedData,
-            ],
-        });
-    };
-
-    return { sendSignal, isSendingSignal: isPending };
-}
 
 export function useListenForSignals(myWalletAddress, onSignalReceived) {
     const onSignalReceivedRef = useRef(onSignalReceived);
