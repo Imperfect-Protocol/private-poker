@@ -1,5 +1,5 @@
-name: app-sadhbh-c0d3-260324
-app_id: da_nZyIPt1UDvX3
+name: private-poker
+app_id: da_nYYILtXUJd4b
 owner: sadhbh-c0d3
 package: .
 kind: wasmer.io/App.v0

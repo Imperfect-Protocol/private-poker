@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TableScreen from '@/components/table_screen/Component';
 import { useConnection } from 'wagmi';
-import { usePokerRTC } from '@/hooks/usePokerRTC';
+import { usePokerRTC } from '@/hooks/usePokerRtc';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 
 const hasAnnounceKey = (player) => {
