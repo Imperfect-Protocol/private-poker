@@ -8,7 +8,6 @@ description = "Private Poker (Next)"
 
 [[module]]
 name = "edge"
-# source = "/Users/sadhbh/src/dev/wasmer-io/edgejs/build-quickjs-wasix/edge.wasm"
 source = "/Users/sadhbh/src/dev/edgejs/build-quickjs-wasix/edge.wasm"
 
 [[command]]

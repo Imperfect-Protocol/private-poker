@@ -1,6 +1,8 @@
-import { usePublicClient, useWriteContract, useWatchContractEvent } from 'wagmi';
+import { useEffect, useRef } from 'react';
+import { useConnection, usePublicClient, useWriteContract, useWatchContractEvent } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
-import { LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
+import { LOBBY_CONTRACT_ADDRESS, CHAIN_POLLING_INTERVAL } from '@/lib/chain';
+import { getBufferedGasOverrides } from '@/lib/gas';
 
 const LOBBY_ABI = parseAbi([
     // Reads
@@ -14,8 +16,9 @@ const LOBBY_ABI = parseAbi([
 
     // Writes
     "function addLobby(uint256 id, uint256 gameType, uint256 flags, string name)",
-    "function createTable(uint256 lobby_id, uint256 table_id, string calldata name, uint256 buy_in, bytes calldata annonce_public_key)",
+    "function createTable(uint256 lobby_id, uint256 table_id, string calldata name, uint256 buy_in, uint256 num_players, bytes calldata annonce_public_key)",
     "function joinTable(uint256 lobby_id, uint256 table_id, bytes calldata annonce_public_key)",
+    "function setTablePlayerAnnoncePublicKey(uint256 lobby_id, uint256 table_id, bytes calldata annonce_public_key)",
     "function removeLobby(uint256 id)",
     "function removeTable(uint256 lobbyId, uint256 tableId)",
 
@@ -26,7 +29,32 @@ const LOBBY_ABI = parseAbi([
 
 export function usePrivatePokerLobby() {
     const publicClient = usePublicClient();
+    const { address } = useConnection();
     const { mutateAsync } = useWriteContract();
+
+    const getWriteOverrides = async ({ functionName, args }) => {
+        if (!address) return {};
+
+        return getBufferedGasOverrides(publicClient, {
+            address: LOBBY_CONTRACT_ADDRESS,
+            abi: LOBBY_ABI,
+            functionName,
+            args,
+            account: address,
+        });
+    };
+
+    const writeLobbyContract = async ({ functionName, args }) => {
+        const overrides = await getWriteOverrides({ functionName, args });
+
+        return await mutateAsync({
+            address: LOBBY_CONTRACT_ADDRESS,
+            abi: LOBBY_ABI,
+            functionName,
+            args,
+            ...overrides,
+        });
+    };
 
     // --- DECODERS ---
 
@@ -143,36 +171,43 @@ export function usePrivatePokerLobby() {
             args: [BigInt(lobbyId), BigInt(tableId)],
         });
 
-        const [detail] = decodeAbiParameters(
-            [
-                {
-                    type: 'tuple',
-                    components: [
-                        {
-                            name: 'info',
-                            type: 'tuple',
-                            components: [
-                                { name: 'tableId', type: 'uint256' },
-                                { name: 'tableFlags', type: 'uint256' },
-                                { name: 'tableBuyin', type: 'uint256' },
-                                { name: 'tablePlayerCount', type: 'uint256' },
-                                { name: 'tableTotalBuyin', type: 'uint256' },
-                                { name: 'tableName', type: 'string' }
-                            ]
-                        },
-                        {
-                            name: 'players',
-                            type: 'tuple[]',
-                            components: [
-                                { name: 'playerAddress', type: 'address' },
-                                { name: 'playerChips', type: 'uint256' }
-                            ]
-                        }
-                    ]
-                }
-            ],
-            blob
-        );
+        const tableDetailShape = (includeAnnoncePublicKey) => [
+            {
+                type: 'tuple',
+                components: [
+                    {
+                        name: 'info',
+                        type: 'tuple',
+                        components: [
+                            { name: 'tableId', type: 'uint256' },
+                            { name: 'tableFlags', type: 'uint256' },
+                            { name: 'tableBuyin', type: 'uint256' },
+                            { name: 'tablePlayerCount', type: 'uint256' },
+                            { name: 'tableTotalBuyin', type: 'uint256' },
+                            { name: 'tableName', type: 'string' }
+                        ]
+                    },
+                    {
+                        name: 'players',
+                        type: 'tuple[]',
+                        components: [
+                            { name: 'playerAddress', type: 'address' },
+                            { name: 'playerChips', type: 'uint256' },
+                            ...(includeAnnoncePublicKey
+                                ? [{ name: 'playerAnnoncePublicKey', type: 'bytes' }]
+                                : [])
+                        ]
+                    }
+                ]
+            }
+        ];
+
+        let detail;
+        try {
+            [detail] = decodeAbiParameters(tableDetailShape(true), blob);
+        } catch {
+            [detail] = decodeAbiParameters(tableDetailShape(false), blob);
+        }
 
         return {
             info: {
@@ -185,7 +220,8 @@ export function usePrivatePokerLobby() {
             },
             players: detail.players.map(p => ({
                 address: p.playerAddress,
-                chips: p.playerChips.toString()
+                chips: p.playerChips.toString(),
+                annoncePublicKey: p.playerAnnoncePublicKey ?? null,
             }))
         };
     };
@@ -207,46 +243,42 @@ export function usePrivatePokerLobby() {
     // --- WRITE OPERATIONS ---
 
     const addLobby = async (id, gameType, flags, name) => {
-        return await mutateAsync({
-            address: LOBBY_CONTRACT_ADDRESS,
-            abi: LOBBY_ABI,
+        return await writeLobbyContract({
             functionName: 'addLobby',
             args: [BigInt(id), BigInt(gameType), BigInt(flags), name],
         });
     };
 
-    const createTable = async (lobbyId, tableId, name, buyIn, publicKeyBytes) => {
-        console.log("createTable()", lobbyId, tableId, name, buyIn, publicKeyBytes);
-        return await mutateAsync({
-            address: LOBBY_CONTRACT_ADDRESS,
-            abi: LOBBY_ABI,
+    const createTable = async (lobbyId, tableId, name, buyIn, numPlayers, publicKeyBytes = '0x') => {
+        return await writeLobbyContract({
             functionName: 'createTable',
-            args: [BigInt(lobbyId), BigInt(tableId), name, BigInt(buyIn), publicKeyBytes],
+            args: [BigInt(lobbyId), BigInt(tableId), name, BigInt(buyIn), BigInt(numPlayers), publicKeyBytes],
         });
     };
 
-    const joinTable = async (lobbyId, tableId, buyIn, publicKeyBytes) => {
-        return await mutateAsync({
-            address: LOBBY_CONTRACT_ADDRESS,
-            abi: LOBBY_ABI,
+    const joinTable = async (lobbyId, tableId, buyIn, publicKeyBytes = '0x') => {
+        return await writeLobbyContract({
             functionName: 'joinTable',
             args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes],
         });
     };
 
+    const setTablePlayerAnnoncePublicKey = async (lobbyId, tableId, publicKeyBytes) => {
+        return await writeLobbyContract({
+            functionName: 'setTablePlayerAnnoncePublicKey',
+            args: [BigInt(lobbyId), BigInt(tableId), publicKeyBytes],
+        });
+    };
+
     const removeLobby = async (id) => {
-        return await mutateAsync({
-            address: LOBBY_CONTRACT_ADDRESS,
-            abi: LOBBY_ABI,
+        return await writeLobbyContract({
             functionName: 'removeLobby',
             args: [BigInt(id)],
         });
     };
 
     const removeTable = async (lobbyId, tableId) => {
-        return await mutateAsync({
-            address: LOBBY_CONTRACT_ADDRESS,
-            abi: LOBBY_ABI,
+        return await writeLobbyContract({
             functionName: 'removeTable',
             args: [BigInt(lobbyId), BigInt(tableId)],
         });
@@ -255,33 +287,47 @@ export function usePrivatePokerLobby() {
     return {
         getLobbyCount, getLobbyAt, getLobbyById,
         getTableCount, getTablesRange, getTableDetail, getPlayerTables,
-        addLobby, createTable, joinTable, removeLobby, removeTable,
+        addLobby, createTable, joinTable, setTablePlayerAnnoncePublicKey, removeLobby, removeTable,
     };
 }
 
 // -- LISTEN TO EVENTS --
 
 export function useListenForNewLobbies(onLobbyCreated) {
+    const onLobbyCreatedRef = useRef(onLobbyCreated);
+
+    useEffect(() => {
+        onLobbyCreatedRef.current = onLobbyCreated;
+    }, [onLobbyCreated]);
+
     useWatchContractEvent({
         address: LOBBY_CONTRACT_ADDRESS,
         abi: LOBBY_ABI,
         eventName: 'LobbyCreated',
+        pollingInterval: CHAIN_POLLING_INTERVAL,
         onLogs: (logs) => {
             logs.forEach(log => {
-                onLobbyCreated(log.args);
+                onLobbyCreatedRef.current?.(log.args);
             });
         },
     });
 }
 
 export function useListenForNewTables(onTableCreated) {
+    const onTableCreatedRef = useRef(onTableCreated);
+
+    useEffect(() => {
+        onTableCreatedRef.current = onTableCreated;
+    }, [onTableCreated]);
+
     useWatchContractEvent({
         address: LOBBY_CONTRACT_ADDRESS,
         abi: LOBBY_ABI,
         eventName: 'TableCreated',
+        pollingInterval: CHAIN_POLLING_INTERVAL,
         onLogs: (logs) => {
             logs.forEach(log => {
-                onTableCreated(log.args);
+                onTableCreatedRef.current?.(log.args);
             });
         },
     });

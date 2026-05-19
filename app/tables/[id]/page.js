@@ -1,16 +1,9 @@
-// app/tables/[id]/page.js
-"use client";
+import TableClient from '@/components/table/TableClient';
 
-import { use } from 'react';
-import dynamic from 'next/dynamic';
-import TableClient from '@/components/TableClient';
+export default async function TablePage({ params, searchParams }) {
+  const { id } = await params;
+  const resolvedSearchParams = await searchParams;
+  const lobbyId = resolvedSearchParams?.lobbyId || "1";
 
-export default function TablePage({ params, searchParams }) {
-  const resolvedParams = use(params);
-  const resolvedSearchParams = use(searchParams);
-
-  const tableId = resolvedParams.id;
-  const lobbyId = resolvedSearchParams.lobbyId || "1";
-
-  return <TableClient tableId={tableId} lobbyId={lobbyId} />;
+  return <TableClient tableId={id} lobbyId={lobbyId} />;
 }

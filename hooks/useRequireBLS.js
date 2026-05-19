@@ -1,44 +1,23 @@
-import { useEffect, useRef } from 'react';
 import { useAppKit } from '@reown/appkit/react';
-import { useConnection } from 'wagmi'; // <-- Add this import
-import { useBLS } from '@/contexts/BLSContext';
+import { useConnection } from 'wagmi';
+import { useBLS } from '@/contexts/BLSContext.jsx';
 
-export function useRequireBLS() {
-  const { blsKeys, isGenerating, generateKeys, isConnected } = useBLS();
-  const { address } = useConnection(); // <-- Get the active wallet address
+export function useRequireBLS(tableDetails = null) {
+  const { getKeys, isGenerating, generateKeys, isConnected } = useBLS();
+  const { address } = useConnection();
   const { open } = useAppKit();
-  
-  // Track WHICH address we asked, instead of just true/false
-  const firedForAddress = useRef(null);
+  const blsKeys = tableDetails ? getKeys(tableDetails) : null;
 
-  useEffect(() => {
-    let timer;
-
-    if (!isConnected) {
-      timer = setTimeout(() => {
-        open();
-      }, 500);
-      firedForAddress.current = null; // Reset if they disconnect entirely
-      return () => clearTimeout(timer);
+  const requireKeys = async (details = tableDetails) => {
+    if (!isConnected || !address) {
+      open();
+      throw new Error('Connect wallet before authorizing this table session.');
     }
-
-    // If connected, no keys, and we haven't asked THIS SPECIFIC ADDRESS yet...
-    if (isConnected && address && !blsKeys && !isGenerating && firedForAddress.current !== address) {
-      
-      // Wait 500ms for cross-tab sync
-      timer = setTimeout(() => {
-        firedForAddress.current = address; // Lock it for this specific account
-        
-        generateKeys().catch(() => {
-          // If they reject, unlock so they can click the button to retry
-          firedForAddress.current = null;
-        });
-      }, 500);
-
+    if (!details) {
+      throw new Error('Table details are required before authorizing this table session.');
     }
+    return generateKeys(details);
+  };
 
-    return () => clearTimeout(timer);
-  }, [isConnected, address, blsKeys, isGenerating, generateKeys, open]);
-
-  return { blsKeys, isGenerating, generateKeys };
+  return { blsKeys, isGenerating, generateKeys: requireKeys };
 }

@@ -1,14 +1,5 @@
-"use client";
+import SiteLayout from '@/components/layout/SiteLayout';
 
-import Navbar from '@/components/Navbar';
-
-export default function SiteLayout({ children }) {
-  return (
-    <div className="flex flex-col min-h-screen">
-      <Navbar />
-      <main className="flex-grow">
-        {children}
-      </main>
-    </div>
-  );
+export default function SiteRouteLayout({ children }) {
+  return <SiteLayout>{children}</SiteLayout>;
 }
