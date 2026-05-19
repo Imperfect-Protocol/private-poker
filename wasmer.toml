@@ -3,18 +3,16 @@ name = "sadhbh-c0d3/private-poker-nextjs"
 version = "0.1.1"
 description = "Private Poker (Next)"
 
+[dependencies]
+"sadhbh-c0d3/edgejs-quickjs" = "^0.1.0"
+
 [fs]
 "/app" = ".next/standalone"
 
-[[module]]
-name = "edge"
-source = "/Users/sadhbh/src/dev/edgejs/build-quickjs-wasix/edge.wasm"
-
 [[command]]
 name = "run"
-module = "edge"
+module = "sadhbh-c0d3/edgejs-quickjs:edge"
 runner = "https://webc.org/runner/wasi"
 
 [command.annotations.wasi]
-atom = "edge"
 main-args = ["/app/server.js"]
