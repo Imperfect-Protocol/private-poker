@@ -31,7 +31,13 @@ export default function DebugConsole({
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
         {messages.map((message, index) => (
           <div key={index} className={`text-[11px] font-mono ${getMessageClassName(message)}`}>
-            <span className="opacity-50">[{message.sender}]:</span> {message.text}
+            {message.sender === 'RTC' ? (
+              message.text
+            ) : (
+              <>
+                <span className="opacity-50">[{message.sender}]:</span> {message.text}
+              </>
+            )}
           </div>
         ))}
       </div>

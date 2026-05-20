@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { useConnection, usePublicClient, useWatchContractEvent, useWriteContract } from 'wagmi';
+import { useCallback, useEffect, useRef } from 'react';
+import { useConnection, usePublicClient, useWriteContract } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
-import { SIGNAL_CONTRACT_ADDRESS, CHAIN_POLLING_INTERVAL } from '@/lib/chain';
+import { SIGNAL_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
+import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
 
 const SIGNAL_ABI = parseAbi([
     "function sendSignal(uint256 lobby_id, uint256 table_id, address[] recipients, bytes[] encrypted_data)",
@@ -16,7 +17,7 @@ export function usePrivatePokerSignal() {
     const { address } = useConnection();
     const { mutateAsync, isPending } = useWriteContract();
 
-    const sendSignal = async (lobbyId, tableId, recipientAddresses, encryptedDataBytes) => {
+    const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes) => {
         if (!hasSignalContract) {
             throw new Error("PrivatePokerSignal contract address is not configured.");
         }
@@ -55,37 +56,76 @@ export function usePrivatePokerSignal() {
             args,
             ...overrides,
         });
-    };
+    }, [address, mutateAsync, publicClient]);
 
     return { sendSignal, isSendingSignal: isPending };
 }
 
 export function useListenForSignals(myWalletAddress, onSignalReceived) {
     const onSignalReceivedRef = useRef(onSignalReceived);
+    const seenLogsRef = useRef(new Set());
 
     useEffect(() => {
         onSignalReceivedRef.current = onSignalReceived;
     }, [onSignalReceived]);
 
-    useWatchContractEvent({
-        address: hasSignalContract ? SIGNAL_CONTRACT_ADDRESS : undefined,
+    usePublicContractEvent({
+        address: SIGNAL_CONTRACT_ADDRESS,
         abi: SIGNAL_ABI,
         eventName: 'HandshakeSignal',
         enabled: hasSignalContract && Boolean(myWalletAddress),
-        pollingInterval: CHAIN_POLLING_INTERVAL,
         onLogs: (logs) => {
-            logs.forEach(log => {
+            logs.forEach((log) => {
                 const { sender, lobby_id, table_id, recipients, encrypted_data } = log.args;
+
+                const isRecipient = recipients?.some(
+                    (recipient) => recipient?.toLowerCase() === myWalletAddress?.toLowerCase(),
+                );
+
+                if (!isRecipient) {
+                    const logId = `${log.transactionHash}:${log.logIndex}:observed`;
+                    if (seenLogsRef.current.has(logId)) return;
+                    seenLogsRef.current.add(logId);
+                    if (seenLogsRef.current.size > 500) {
+                        const [oldestLogId] = seenLogsRef.current;
+                        seenLogsRef.current.delete(oldestLogId);
+                    }
+
+                    Promise.resolve(onSignalReceivedRef.current?.({
+                        sender,
+                        lobbyId: lobby_id.toString(),
+                        tableId: table_id.toString(),
+                        recipients,
+                        encryptedData: undefined,
+                        logId,
+                        isRecipient: false,
+                    })).catch((error) => {
+                        console.debug('[RTC debug] signal callback failed', error);
+                    });
+                    return;
+                }
 
                 recipients?.forEach((recipient, index) => {
                     if (recipient?.toLowerCase() !== myWalletAddress?.toLowerCase()) return;
 
-                    onSignalReceivedRef.current?.({
+                    const logId = `${log.transactionHash}:${log.logIndex}:${index}`;
+                    if (seenLogsRef.current.has(logId)) return;
+                    seenLogsRef.current.add(logId);
+                    if (seenLogsRef.current.size > 500) {
+                        const [oldestLogId] = seenLogsRef.current;
+                        seenLogsRef.current.delete(oldestLogId);
+                    }
+
+                    Promise.resolve(onSignalReceivedRef.current?.({
                         sender,
                         lobbyId: lobby_id.toString(),
                         tableId: table_id.toString(),
+                        recipients,
                         encryptedData: encrypted_data[index],
-                        logId: `${log.transactionHash}:${log.logIndex}:${index}`,
+                        logId,
+                        isRecipient: true,
+                    })).catch((error) => {
+                        console.debug('[RTC debug] signal callback failed', error);
                     });
                 });
             });

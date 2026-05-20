@@ -107,24 +107,26 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     });
   }, [addDebugMessage]);
 
+  const handleRtcMessage = useCallback((incoming) => {
+    if (incoming.type === "GAME_UPDATE") {
+      setLiveTableData(prev => ({
+        ...prev,
+        current_hand: {
+          ...prev.current_hand,
+          ...incoming.data
+        }
+      }));
+    } else if (incoming.type === "CHAT") {
+      addDebugMessage({ text: incoming.text, sender: "Peer" });
+    }
+  }, [addDebugMessage]);
+
   const { connectedPeerCount, connectedPeerAddresses, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(
     tableId,
     lobbyId,
     currentUserCanUseNetwork ? blsKeys : null,
     liveTableData.players,
-    (incoming) => {
-      if (incoming.type === "GAME_UPDATE") {
-        setLiveTableData(prev => ({
-          ...prev,
-          current_hand: {
-            ...prev.current_hand,
-            ...incoming.data
-          }
-        }));
-      } else if (incoming.type === "CHAT") {
-        addDebugMessage({ text: incoming.text, sender: "Peer" });
-      }
-    },
+    handleRtcMessage,
     handleRtcActivity,
     isTableFull,
     tableCapacity,

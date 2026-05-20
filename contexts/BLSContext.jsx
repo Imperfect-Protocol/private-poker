@@ -29,8 +29,8 @@ function getStakeDetails(tableDetails) {
 
     return {
         buyInLabel: buyIn > 0 ? `$${buyIn} CHIPS` : 'Table buy-in',
-        blindsLabel: tableDetails.blindsLabel ?? tableDetails.blinds ?? option?.blinds ?? 'Table blinds',
-        stakesLabel: tableDetails.stakesLabel ?? option?.name ?? 'Table stakes',
+        blindsLabel: option?.blinds ?? tableDetails.blindsLabel ?? tableDetails.blinds ?? 'Table blinds',
+        stakesLabel: option?.name ?? tableDetails.stakesLabel ?? 'Table stakes',
     };
 }
 
