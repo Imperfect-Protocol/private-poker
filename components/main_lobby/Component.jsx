@@ -1,60 +1,10 @@
 "use client";
 
-import { useEffect, useState } from 'react';
 import LobbyCard from '@/components/lobby/LobbyCard';
-import { useListenForNewLobbies, usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
-import { getLobbyStatus } from '@/lib/constants';
+import { useLobby } from '@/hooks/useLobby';
 
 export default function MainLobby() {
-  const [lobbies, setLobbies] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { getLobbyCount, getLobbyAt } = usePrivatePokerLobby();
-
-  useListenForNewLobbies(() => {
-    setRefreshTrigger((current) => current + 1);
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchLobbies = async () => {
-      try {
-        if (refreshTrigger === 0) setIsLoading(true);
-        const count = await getLobbyCount();
-        const fetchedLobbies = [];
-
-        for (let i = 0; i < count; i += 1) {
-          const lobbyData = await getLobbyAt(i);
-          fetchedLobbies.push({
-            id: lobbyData.id,
-            active: getLobbyStatus(lobbyData.flags) === 'active' ? "true" : "false",
-            name: lobbyData.name,
-            table_count: lobbyData.tableCount.toString(),
-            total_players: lobbyData.playerCount.toString(),
-            total_buyin: `$${lobbyData.totalVolume}`,
-          });
-        }
-
-        if (!cancelled) {
-          fetchedLobbies.sort((a, b) => a.id - b.id);
-          setLobbies(fetchedLobbies);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Failed to fetch lobbies from Stylus:", error);
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
-    fetchLobbies();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshTrigger]);
+  const { lobbies, isLoading } = useLobby();
 
   return (
     <main className="min-h-screen bg-slate-950 p-4 md:px-24 md:py-8 flex flex-col items-center justify-start">

@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { usePokerChips } from '@/hooks/usePokerChips';
-import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
-import { useRequireBLS } from '@/hooks/useRequireBLS';
+import { useCreateTable } from '@/hooks/useCreateTable';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 import { getGameTypeName } from '@/lib/constants';
 import { STAKES_OPTIONS } from '@/lib/stakes';
@@ -29,9 +27,7 @@ export default function CreateTableDialog({
     lobbyId: Number(lobbyId),
   });
 
-  const { createTable, getLobbyById, getTableCount, getTablesRange } = usePrivatePokerLobby();
-  const { ensureBuyInAllowance } = usePokerChips();
-  const { generateKeys } = useRequireBLS();
+  const { createTableWithBuyIn, getLobbyById, getTableCount, getTablesRange } = useCreateTable();
 
   useEffect(() => {
     setFormData((current) => ({
@@ -122,7 +118,7 @@ export default function CreateTableDialog({
     try {
       setIsPending(true);
       const tableId = Date.now();
-      const keys = await generateKeys({
+      const { publicKeyBytes } = await createTableWithBuyIn({
         lobbyId: formData.lobbyId,
         lobbyName: lobbyInfo.name,
         tableId,
@@ -130,17 +126,8 @@ export default function CreateTableDialog({
         buyIn: formData.buyin,
         blinds: formData.blinds,
         stakesLabel: STAKES_OPTIONS.find((option) => option.buyin === formData.buyin)?.label?.split(':')[0],
+        numPlayers: formData.maxPlayers,
       });
-      const publicKeyBytes = `0x${keys.publicKey}`;
-      await ensureBuyInAllowance(formData.buyin);
-      await createTable(
-        formData.lobbyId,
-        tableId,
-        cleanName,
-        formData.buyin,
-        formData.maxPlayers,
-        publicKeyBytes,
-      );
 
       const tableData = {
         id: tableId,

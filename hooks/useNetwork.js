@@ -62,21 +62,31 @@ function getSessionEntry(key, createSession) {
   return entry;
 }
 
-export function usePokerRTC(
+export function useNetwork({
   tableId,
   lobbyId,
   blsKeys,
-  players = [],
+  seats = [],
   onMessage,
   onActivity,
   isTableFull = false,
   tableCapacity = 0,
   topology = DEFAULT_RTC_TOPOLOGY,
-) {
+} = {}) {
   const { address } = useConnection();
   const { sendSignal } = usePrivatePokerSignal();
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
+  const players = useMemo(
+    () => seats
+      .filter((seat) => seat?.[1])
+      .map((seat) => ({
+        seatNo: seat[0],
+        address: seat[1],
+        annoncePublicKey: seat[2],
+      })),
+    [seats],
+  );
   const sessionKey = `${lobbyId ?? 'unknown'}:${tableId ?? 'unknown'}`;
   const playersKey = makePlayersKey(players);
   const sendSignalRef = useRef(sendSignal);
@@ -101,24 +111,21 @@ export function usePokerRTC(
   const [snapshot, setSnapshot] = useState(() => session.getSnapshot());
   onStateChangeRef.current = setSnapshot;
 
-  const topologyPlan = useMemo(
-    () => {
-      const plan = getRtcTopologyPlan(players, address, topology);
-      const topologyKey = `${address ?? ''}::${topology ?? DEFAULT_RTC_TOPOLOGY}::${playersKey}`;
-      if (!sessionEntry.loggedTopologyKeys.has(topologyKey)) {
-        sessionEntry.loggedTopologyKeys.add(topologyKey);
-        console.log("topologyPlan", plan);
-      }
-      return plan;
-    },
-    [address, playersKey, sessionEntry, topology],
-  );
+  const topologyPlan = useMemo(() => {
+    const plan = getRtcTopologyPlan(players, address, topology);
+    const topologyKey = `${address ?? ''}::${topology ?? DEFAULT_RTC_TOPOLOGY}::${playersKey}`;
+    if (!sessionEntry.loggedTopologyKeys.has(topologyKey)) {
+      sessionEntry.loggedTopologyKeys.add(topologyKey);
+      console.log('topologyPlan', plan);
+    }
+    return plan;
+  }, [address, players, playersKey, sessionEntry, topology]);
 
   useEffect(() => {
     if (sessionEntry.callbacksInstalled) return;
 
     sessionEntry.callbacksInstalled = true;
-    console.log("session.setCallbacks()");
+    console.log('session.setCallbacks()');
     session.setCallbacks({
       sendSignal: (...args) => sendSignalRef.current(...args),
       onActivity: (...args) => onActivityRef.current?.(...args),
@@ -142,7 +149,7 @@ export function usePokerRTC(
 
     if (!sessionEntry.loggedUpdateKeys.has(sessionConfigKey)) {
       sessionEntry.loggedUpdateKeys.add(sessionConfigKey);
-      console.log("session.update()");
+      console.log('session.update()');
     }
 
     session.update({
@@ -160,6 +167,7 @@ export function usePokerRTC(
     address,
     isTableFull,
     lobbyId,
+    players,
     playersKey,
     privateKey,
     publicKey,
@@ -171,7 +179,7 @@ export function usePokerRTC(
   ]);
 
   useListenForSignals(address, async (signalData) => {
-    console.log("handleSignal", signalData);
+    console.log('handleSignal', signalData);
     await session.handleSignal(signalData);
   });
 
@@ -189,25 +197,30 @@ export function usePokerRTC(
       sessionEntry.destroyTimer = setTimeout(() => {
         if (sessionEntry.users > 0) return;
 
-        console.log("session.destroy()");
+        console.log('session.destroy()');
         session.destroy();
         sessionsByTable.delete(sessionKey);
       }, 1000);
     };
   }, [session, sessionEntry, sessionKey]);
 
-  const sendMessage = useCallback((message) => {
-    console.log("session.sendMessage()", message);
-    session.sendMessage(message);
+  const publishMessage = useCallback((message) => {
+    console.log('session.publishMessage()', message);
+    session.publishMessage(message);
   }, [session]);
 
-  return {
+  const subscribeTo = useCallback((playerAddress, playerAnnouncePubKey) => {
+    session.subscribeTo(playerAddress, playerAnnouncePubKey);
+  }, [session]);
+
+  const result = [publishMessage, subscribeTo];
+  return Object.assign(result, {
     connectedPeerCount: snapshot.connectedPeerCount,
     connectedPeerAddresses: snapshot.connectedPeerAddresses,
     expectedPeerCount: snapshot.expectedPeerCount,
-    sendMessage,
     status: snapshot.status,
     topology: topologyPlan.topology,
     topologyLabel: getRtcTopologyLabel(topologyPlan.topology),
-  };
+    topologyPlan,
+  });
 }

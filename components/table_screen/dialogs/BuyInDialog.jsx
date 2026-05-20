@@ -2,15 +2,11 @@
 
 import { useState } from 'react';
 import { formatUnits } from 'viem';
-import { usePokerChips } from '@/hooks/usePokerChips';
-import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
-import { useRequireBLS } from '@/hooks/useRequireBLS';
+import { useJoinTable } from '@/hooks/useJoinTable';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 
 export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
-  const { joinTable } = usePrivatePokerLobby();
-  const { ensureBuyInAllowance } = usePokerChips();
-  const { generateKeys } = useRequireBLS();
+  const { joinTableWithBuyIn } = useJoinTable();
 
   const [isPending, setIsPending] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -27,7 +23,7 @@ export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
 
     try {
       setIsPending(true);
-      const keys = await generateKeys({
+      await joinTableWithBuyIn({
         lobbyId,
         tableId: tableData.id,
         tableName: tableData.name,
@@ -35,9 +31,6 @@ export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
         blinds: tableData.blinds,
         stakesLabel: tableData.stakes,
       });
-      const publicKeyBytes = `0x${keys.publicKey}`;
-      await ensureBuyInAllowance(tableData.buyin);
-      await joinTable(lobbyId, tableData.id, tableData.buyin, publicKeyBytes);
       closeDialog(onJoined);
     } catch (error) {
       console.error(error);
