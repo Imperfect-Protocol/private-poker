@@ -13,6 +13,7 @@ export default function TableScreen({
   currentUserBlsKey,
   currentUserNetworkJoined,
   currentUserNetworkStatus,
+  connectedPeerAddresses = [],
   isJoiningNetwork,
   onJoinNetwork,
   status,
@@ -61,6 +62,7 @@ export default function TableScreen({
             currentUserBlsKey={currentUserBlsKey}
             currentUserNetworkJoined={currentUserNetworkJoined}
             currentUserNetworkStatus={currentUserNetworkStatus}
+            connectedPeerAddresses={connectedPeerAddresses}
             isJoiningNetwork={isJoiningNetwork}
             onJoinNetwork={onJoinNetwork}
           />

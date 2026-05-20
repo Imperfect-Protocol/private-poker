@@ -107,7 +107,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     });
   }, [addDebugMessage]);
 
-  const { connectedPeerCount, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(
+  const { connectedPeerCount, connectedPeerAddresses, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(
     tableId,
     lobbyId,
     currentUserCanUseNetwork ? blsKeys : null,
@@ -169,6 +169,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
       currentUserBlsKey={blsKeys}
       currentUserNetworkJoined={currentUserNetworkJoined}
       currentUserNetworkStatus={status}
+      connectedPeerAddresses={connectedPeerAddresses}
       isJoiningNetwork={isGenerating}
       onJoinNetwork={() => joinNetwork({ force: true })}
       status={status}

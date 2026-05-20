@@ -22,6 +22,14 @@ const formatKey = (value) => {
   return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
 };
 const formatSeat = (value) => value ? value.slice(2, 4).toUpperCase() : '??';
+const RTC_LINK = {
+  INBOUND: 'inbound',
+  OUTBOUND: 'outbound',
+};
+const linkKey = (peerAddress, direction) => `${direction}:${normalizeAddress(peerAddress)}`;
+const isDeadPeerConnection = (pc) => {
+  return !pc || ['closed', 'failed', 'disconnected'].includes(pc.connectionState);
+};
 
 const waitForIceGatheringComplete = (pc) => {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
@@ -63,9 +71,10 @@ export function usePokerRTC(
   const privateKey = blsKeys?.privateKey;
   const [hasConnectionError, setHasConnectionError] = useState(false);
   const [connectedPeerCount, setConnectedPeerCount] = useState(0);
-  const [reconnectTick, setReconnectTick] = useState(0);
+  const [connectedPeerAddresses, setConnectedPeerAddresses] = useState([]);
 
   const channelsRef = useRef(new Map());
+  const connectedLinksRef = useRef(new Set());
   const connectedPeersRef = useRef(new Set());
   const initiatedPeersRef = useRef(new Set());
   const peerConnectionsRef = useRef(new Map());
@@ -111,24 +120,57 @@ export function usePokerRTC(
     return topologyPlan.expectedPeers.map((player) => player.address);
   }, [topologyPlan]);
 
-  const setPeerConnected = useCallback((peerAddress) => {
-    if (!connectedPeersRef.current.has(normalizeAddress(peerAddress))) {
+  const updateConnectedPeers = useCallback(() => {
+    const inboundPeers = new Set(
+      topologyPlan.inboundSources.map((player) => normalizeAddress(player.address)),
+    );
+    const outboundPeers = new Set(
+      topologyPlan.outboundTargets.map((player) => normalizeAddress(player.address)),
+    );
+    const nextConnectedPeers = new Set();
+
+    topologyPlan.expectedPeers.forEach((player) => {
+      const peerAddress = normalizeAddress(player.address);
+      if (!peerAddress) return;
+
+      const needsInbound = inboundPeers.has(peerAddress);
+      const needsOutbound = outboundPeers.has(peerAddress);
+      const hasInbound = !needsInbound || connectedLinksRef.current.has(linkKey(peerAddress, RTC_LINK.INBOUND));
+      const hasOutbound = !needsOutbound || connectedLinksRef.current.has(linkKey(peerAddress, RTC_LINK.OUTBOUND));
+
+      if (hasInbound && hasOutbound) {
+        nextConnectedPeers.add(peerAddress);
+      }
+    });
+
+    connectedPeersRef.current = nextConnectedPeers;
+    setConnectedPeerCount(nextConnectedPeers.size);
+    setConnectedPeerAddresses(Array.from(nextConnectedPeers));
+    return nextConnectedPeers;
+  }, [topologyPlan.expectedPeers, topologyPlan.inboundSources, topologyPlan.outboundTargets]);
+
+  const setPeerConnected = useCallback((peerAddress, direction) => {
+    const peerKey = normalizeAddress(peerAddress);
+    const wasFullyConnected = connectedPeersRef.current.has(peerKey);
+    connectedLinksRef.current.add(linkKey(peerAddress, direction));
+    const connectedPeers = updateConnectedPeers();
+
+    if (!wasFullyConnected && connectedPeers.has(peerKey)) {
       emitActivity(`${formatSeat(address)} = ${formatSeat(peerAddress)} Connected`);
     }
-    logActivity(`peer connected ${formatPeer(peerAddress)}`);
+    logActivity(`peer ${direction} connected ${formatPeer(peerAddress)}`);
     setHasConnectionError(false);
-    connectedPeersRef.current.add(normalizeAddress(peerAddress));
-    setConnectedPeerCount(connectedPeersRef.current.size);
-  }, [address, emitActivity, logActivity]);
+  }, [address, emitActivity, logActivity, updateConnectedPeers]);
 
-  const resetPeer = useCallback((peerAddress, reason) => {
-    const key = normalizeAddress(peerAddress);
-    if (!key || resettingPeersRef.current.has(key)) return;
+  const resetPeerLink = useCallback((peerAddress, direction, reason) => {
+    const peerKey = normalizeAddress(peerAddress);
+    const key = linkKey(peerAddress, direction);
+    if (!peerKey || resettingPeersRef.current.has(key)) return;
 
     resettingPeersRef.current.add(key);
-    logActivity(`reset peer ${formatPeer(peerAddress)}: ${reason}`);
+    logActivity(`reset ${direction} peer ${formatPeer(peerAddress)}: ${reason}`);
 
-    const wasConnected = connectedPeersRef.current.has(key);
+    const wasFullyConnected = connectedPeersRef.current.has(peerKey);
     const channel = channelsRef.current.get(key);
     if (channel) {
       channel.onopen = null;
@@ -150,21 +192,19 @@ export function usePokerRTC(
     }
 
     channelsRef.current.delete(key);
-    connectedPeersRef.current.delete(key);
-    initiatedPeersRef.current.delete(key);
+    connectedLinksRef.current.delete(key);
     peerConnectionsRef.current.delete(key);
-    setConnectedPeerCount(connectedPeersRef.current.size);
+    const connectedPeers = updateConnectedPeers();
     setHasConnectionError(false);
-    setReconnectTick((value) => value + 1);
 
-    if (wasConnected) {
+    if (wasFullyConnected && !connectedPeers.has(peerKey)) {
       emitActivity(`${formatSeat(address)} ! ${formatSeat(peerAddress)} Disconnected`);
     }
 
     setTimeout(() => {
       resettingPeersRef.current.delete(key);
     }, 0);
-  }, [address, emitActivity, logActivity]);
+  }, [address, emitActivity, logActivity, updateConnectedPeers]);
 
   const status = useMemo(() => {
     if (hasConnectionError) return 'error';
@@ -198,22 +238,23 @@ export function usePokerRTC(
     topologyPlan.seatedPlayers.length,
   ]);
 
-  const setupDataChannel = useCallback((peerAddress, dataChannel) => {
-    logActivity(`data channel attached ${formatPeer(peerAddress)} (${dataChannel.label})`);
+  const setupDataChannel = useCallback((peerAddress, direction, dataChannel) => {
+    const key = linkKey(peerAddress, direction);
+    logActivity(`${direction} data channel attached ${formatPeer(peerAddress)} (${dataChannel.label})`);
 
     dataChannel.onopen = () => {
-      logActivity(`data channel open ${formatPeer(peerAddress)} (${dataChannel.label})`);
-      channelsRef.current.set(normalizeAddress(peerAddress), dataChannel);
-      setPeerConnected(peerAddress);
+      logActivity(`${direction} data channel open ${formatPeer(peerAddress)} (${dataChannel.label})`);
+      channelsRef.current.set(key, dataChannel);
+      setPeerConnected(peerAddress, direction);
     };
 
     dataChannel.onclose = () => {
-      logActivity(`data channel closed ${formatPeer(peerAddress)} (${dataChannel.label})`);
-      resetPeer(peerAddress, 'data channel closed');
+      logActivity(`${direction} data channel closed ${formatPeer(peerAddress)} (${dataChannel.label})`);
+      resetPeerLink(peerAddress, direction, 'data channel closed');
     };
 
     dataChannel.onmessage = (event) => {
-      logActivity(`data message received ${formatPeer(peerAddress)} (${String(event.data).length} bytes)`);
+      logActivity(`${direction} data message received ${formatPeer(peerAddress)} (${String(event.data).length} bytes)`);
       try {
         onMessageRef.current?.(JSON.parse(event.data));
       } catch (error) {
@@ -221,53 +262,53 @@ export function usePokerRTC(
         console.error('Failed to parse RTC message:', error);
       }
     };
-  }, [logActivity, resetPeer, setPeerConnected]);
+  }, [logActivity, resetPeerLink, setPeerConnected]);
 
-  const getPeerConnection = useCallback((peerAddress, createChannel = false) => {
-    const key = normalizeAddress(peerAddress);
+  const getPeerConnection = useCallback((peerAddress, direction, createChannel = false) => {
+    const key = linkKey(peerAddress, direction);
     const existing = peerConnectionsRef.current.get(key);
     if (existing) {
-      if (['closed', 'failed', 'disconnected'].includes(existing.connectionState)) {
-        resetPeer(peerAddress, `stale peer connection ${existing.connectionState}`);
+      if (isDeadPeerConnection(existing)) {
+        resetPeerLink(peerAddress, direction, `stale peer connection ${existing.connectionState}`);
       } else {
-        logActivity(`reuse peer connection ${formatPeer(peerAddress)} state=${existing.connectionState}`);
+        logActivity(`reuse ${direction} peer connection ${formatPeer(peerAddress)} state=${existing.connectionState}`);
         return existing;
       }
     }
 
-    logActivity(`create peer connection ${formatPeer(peerAddress)} create_channel=${createChannel}`);
+    logActivity(`create ${direction} peer connection ${formatPeer(peerAddress)} create_channel=${createChannel}`);
     const pc = new RTCPeerConnection(RTC_CONFIG);
     pc.onconnectionstatechange = () => {
-      logActivity(`peer connection ${formatPeer(peerAddress)} state=${pc.connectionState}`);
+      logActivity(`${direction} peer connection ${formatPeer(peerAddress)} state=${pc.connectionState}`);
       if (['closed', 'failed', 'disconnected'].includes(pc.connectionState)) {
-        resetPeer(peerAddress, `peer connection ${pc.connectionState}`);
+        resetPeerLink(peerAddress, direction, `peer connection ${pc.connectionState}`);
       }
     };
     pc.oniceconnectionstatechange = () => {
-      logActivity(`ice connection ${formatPeer(peerAddress)} state=${pc.iceConnectionState}`);
+      logActivity(`${direction} ice connection ${formatPeer(peerAddress)} state=${pc.iceConnectionState}`);
       if (['closed', 'failed', 'disconnected'].includes(pc.iceConnectionState)) {
-        resetPeer(peerAddress, `ice connection ${pc.iceConnectionState}`);
+        resetPeerLink(peerAddress, direction, `ice connection ${pc.iceConnectionState}`);
       }
     };
     pc.onicegatheringstatechange = () => {
-      logActivity(`ice gathering ${formatPeer(peerAddress)} state=${pc.iceGatheringState}`);
+      logActivity(`${direction} ice gathering ${formatPeer(peerAddress)} state=${pc.iceGatheringState}`);
     };
     pc.onsignalingstatechange = () => {
-      logActivity(`signaling ${formatPeer(peerAddress)} state=${pc.signalingState}`);
+      logActivity(`${direction} signaling ${formatPeer(peerAddress)} state=${pc.signalingState}`);
     };
     pc.ondatachannel = (event) => {
-      logActivity(`incoming data channel ${formatPeer(peerAddress)} (${event.channel.label})`);
-      setupDataChannel(peerAddress, event.channel);
+      logActivity(`${direction} incoming data channel ${formatPeer(peerAddress)} (${event.channel.label})`);
+      setupDataChannel(peerAddress, direction, event.channel);
     };
 
     if (createChannel) {
-      logActivity(`create outbound data channel ${formatPeer(peerAddress)}`);
-      setupDataChannel(peerAddress, pc.createDataChannel('poker-token-ring'));
+      logActivity(`create ${direction} data channel ${formatPeer(peerAddress)}`);
+      setupDataChannel(peerAddress, direction, pc.createDataChannel(`poker-token-ring-${direction}`));
     }
 
     peerConnectionsRef.current.set(key, pc);
     return pc;
-  }, [logActivity, resetPeer, setupDataChannel]);
+  }, [logActivity, resetPeerLink, setupDataChannel]);
 
   const encryptSignalForPeer = useCallback(async (recipientPubKey, signal) => {
     if (!publicKey) return;
@@ -326,6 +367,80 @@ export function usePokerRTC(
     );
   }, [encryptSignalForPeer, lobbyId, logActivity, sendSignal, tableId]);
 
+  const publishOutboundOffers = useCallback(async (outboundTargets, { force = false, reciprocal = false } = {}) => {
+    if (!address || !publicKey || !tableId || !lobbyId) return;
+
+    const targets = outboundTargets
+      .filter((player) => player?.address && player?.annoncePublicKey)
+      .filter((player) => {
+        const peerKey = normalizeAddress(player.address);
+        const outboundKey = linkKey(player.address, RTC_LINK.OUTBOUND);
+        const existing = peerConnectionsRef.current.get(outboundKey);
+
+        if (connectedLinksRef.current.has(outboundKey)) return false;
+        if (force) return true;
+        if (initiatedPeersRef.current.has(peerKey)) return false;
+        if (existing && !isDeadPeerConnection(existing)) return false;
+        return true;
+      });
+
+    if (targets.length === 0) return;
+
+    targets.forEach((target) => {
+      const peerKey = normalizeAddress(target.address);
+      if (force) {
+        resetPeerLink(target.address, RTC_LINK.OUTBOUND, 'refresh outbound offer');
+        initiatedPeersRef.current.delete(peerKey);
+      }
+      initiatedPeersRef.current.add(peerKey);
+    });
+
+    try {
+      setHasConnectionError(false);
+      logActivity(`prepare ${targets.length} outbound offer(s) to I+1`);
+      const outboundSignals = await Promise.all(targets.map(async (target) => {
+        const pc = getPeerConnection(target.address, RTC_LINK.OUTBOUND, true);
+        logActivity(`create offer ${formatPeer(target.address)}`);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        logActivity(`wait for ICE gathering before offer ${formatPeer(target.address)}`);
+        await waitForIceGatheringComplete(pc);
+
+        return {
+          recipientAddress: target.address,
+          recipientPubKey: target.annoncePublicKey,
+          signal: {
+            type: 'offer',
+            reciprocal,
+            sdp: pc.localDescription.sdp,
+          },
+        };
+      }));
+
+      await sendEncryptedSignals(outboundSignals);
+      targets.forEach((target) => {
+        emitActivity(`${formatSeat(address)} > ${formatSeat(target.address)} Offer`);
+      });
+    } catch (error) {
+      targets.forEach((target) => {
+        initiatedPeersRef.current.delete(normalizeAddress(target.address));
+      });
+      logActivity(`offer publish failed: ${error.message}`);
+      console.error('Failed to initiate chain-signaled WebRTC:', error);
+      setHasConnectionError(true);
+    }
+  }, [
+    address,
+    emitActivity,
+    getPeerConnection,
+    lobbyId,
+    logActivity,
+    publicKey,
+    resetPeerLink,
+    sendEncryptedSignals,
+    tableId,
+  ]);
+
   const handleIncomingSignal = useCallback(async (senderAddress, signal) => {
     const peerPubKey = signal.senderPubKey;
     logActivity(`handle signal ${signal.type ?? 'unknown'} from ${formatPeer(senderAddress)}`);
@@ -338,12 +453,11 @@ export function usePokerRTC(
       return;
     }
 
-    const pc = getPeerConnection(senderAddress, false);
-
     if (signal.type === 'offer') {
       if (!peerPubKey) throw new Error('Incoming offer did not include senderPubKey.');
 
       emitActivity(`${formatSeat(address)} < ${formatSeat(senderAddress)} Offer`);
+      const pc = getPeerConnection(senderAddress, RTC_LINK.INBOUND, false);
 
       if (pc.signalingState !== 'stable') {
         logActivity(`rollback local offer before answering ${formatPeer(senderAddress)}`);
@@ -363,10 +477,22 @@ export function usePokerRTC(
         type: 'answer',
         sdp: pc.localDescription.sdp,
       });
+
+      const outboundPeer = topologyPlan.outboundTargets.find(
+        (player) => normalizeAddress(player.address) === normalizeAddress(senderAddress),
+      );
+      if (outboundPeer && !signal.reciprocal) {
+        await publishOutboundOffers([outboundPeer], { force: true, reciprocal: true });
+      }
       return;
     }
 
     if (signal.type === 'answer') {
+      const pc = peerConnectionsRef.current.get(linkKey(senderAddress, RTC_LINK.OUTBOUND));
+      if (!pc) {
+        logActivity(`answer ignored from ${formatPeer(senderAddress)}: no outbound offer exists`);
+        return;
+      }
       if (pc.signalingState === 'stable') {
         logActivity(`answer ignored from ${formatPeer(senderAddress)}: peer connection already stable`);
         return;
@@ -379,9 +505,21 @@ export function usePokerRTC(
 
     if (signal.type === 'ice-candidate' && signal.candidate) {
       logActivity(`add ICE candidate ${formatPeer(senderAddress)}`);
+      const pc = peerConnectionsRef.current.get(linkKey(senderAddress, RTC_LINK.OUTBOUND))
+        ?? peerConnectionsRef.current.get(linkKey(senderAddress, RTC_LINK.INBOUND));
+      if (!pc) return;
       await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
     }
-  }, [address, emitActivity, getPeerConnection, logActivity, sendEncryptedSignal, topologyPlan.inboundSources]);
+  }, [
+    address,
+    emitActivity,
+    getPeerConnection,
+    logActivity,
+    publishOutboundOffers,
+    sendEncryptedSignal,
+    topologyPlan.inboundSources,
+    topologyPlan.outboundTargets,
+  ]);
 
   useListenForSignals(address, async (signalData) => {
     if (!privateKey || !tableId || !lobbyId) {
@@ -478,63 +616,14 @@ export function usePokerRTC(
     }
     if (topologyPlan.seatedPlayers.length < 2) return;
 
-    const targets = topologyPlan.outboundTargets
-      .filter((player) => player?.address && player?.annoncePublicKey)
-      .filter((player) => !initiatedPeersRef.current.has(normalizeAddress(player.address)));
-
-    if (targets.length === 0) return;
-
-    targets.forEach((target) => {
-      initiatedPeersRef.current.add(normalizeAddress(target.address));
-    });
-
-    const initiate = async () => {
-      try {
-        setHasConnectionError(false);
-        logActivity(`table full; prepare ${targets.length} outbound offer(s) to I+1`);
-        const outboundSignals = await Promise.all(targets.map(async (target) => {
-          const pc = getPeerConnection(target.address, true);
-          logActivity(`create offer ${formatPeer(target.address)}`);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          logActivity(`wait for ICE gathering before offer ${formatPeer(target.address)}`);
-          await waitForIceGatheringComplete(pc);
-
-          return {
-            recipientAddress: target.address,
-            recipientPubKey: target.annoncePublicKey,
-            signal: {
-              type: 'offer',
-              sdp: pc.localDescription.sdp,
-            },
-          };
-        }));
-
-        await sendEncryptedSignals(outboundSignals);
-        targets.forEach((target) => {
-          emitActivity(`${formatSeat(address)} > ${formatSeat(target.address)} Offer`);
-        });
-      } catch (error) {
-        targets.forEach((target) => {
-          initiatedPeersRef.current.delete(normalizeAddress(target.address));
-        });
-        logActivity(`offer publish failed: ${error.message}`);
-        console.error('Failed to initiate chain-signaled WebRTC:', error);
-        setHasConnectionError(true);
-      }
-    };
-
-    initiate();
+    publishOutboundOffers(topologyPlan.outboundTargets);
   }, [
     address,
-    emitActivity,
-    getPeerConnection,
     isTableFull,
     lobbyId,
     logActivity,
+    publishOutboundOffers,
     publicKey,
-    reconnectTick,
-    sendEncryptedSignals,
     tableId,
     tableCapacity,
     topologyPlan,
@@ -542,6 +631,7 @@ export function usePokerRTC(
 
   useEffect(() => {
     const channels = channelsRef.current;
+    const connectedLinks = connectedLinksRef.current;
     const connectedPeers = connectedPeersRef.current;
     const initiatedPeers = initiatedPeersRef.current;
     const peerConnections = peerConnectionsRef.current;
@@ -564,7 +654,10 @@ export function usePokerRTC(
         pc.close();
       });
       channels.clear();
+      connectedLinks.clear();
       connectedPeers.clear();
+      setConnectedPeerAddresses([]);
+      setConnectedPeerCount(0);
       initiatedPeers.clear();
       peerConnections.clear();
       processedSignals.clear();
@@ -577,8 +670,8 @@ export function usePokerRTC(
     const payload = JSON.stringify(message);
     let sentCount = 0;
 
-    channelsRef.current.forEach((channel) => {
-      if (channel.readyState === 'open') {
+    channelsRef.current.forEach((channel, key) => {
+      if (key.startsWith(`${RTC_LINK.OUTBOUND}:`) && channel.readyState === 'open') {
         channel.send(payload);
         sentCount += 1;
       }
@@ -588,6 +681,7 @@ export function usePokerRTC(
 
   return {
     connectedPeerCount,
+    connectedPeerAddresses,
     expectedPeerCount: expectedPeerAddresses.length,
     sendMessage,
     status,

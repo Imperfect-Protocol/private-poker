@@ -21,7 +21,7 @@ export default function Status({
 
   if (!isNetworkJoined && (!isMe || !currentUserBlsKey)) {
     if (!isMe) {
-      return <p className="text-xs font-mono text-amber-300 font-black">Sitting out</p>;
+      return <p className="text-xs font-mono text-amber-300 font-black">Paused</p>;
     }
 
     return (

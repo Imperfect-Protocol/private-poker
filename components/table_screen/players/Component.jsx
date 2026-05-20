@@ -1,13 +1,6 @@
 import Player from '@/components/table_screen/players/Player';
 import { parseCards } from '@/components/table_screen/Card';
 
-const hasAnnounceKey = (player) => {
-  const key = player?.annoncePublicKey;
-  if (!key) return false;
-  if (typeof key !== "string") return true;
-  return key !== "0x" && key.length > 2;
-};
-
 const clockPositions = {
   12: "top-[-5%] left-1/2 -translate-x-1/2",
   1: "top-[5%] left-[75%] -translate-x-1/2",
@@ -62,19 +55,23 @@ export default function TablePlayers({
   currentUserAddress,
   currentUserBlsKey,
   currentUserNetworkJoined = false,
+  connectedPeerAddresses = [],
   isJoiningNetwork = false,
   onJoinNetwork,
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentUserAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
   const heroCards = parseCards(tableData?.current_hand?.player_cards);
+  const connectedPeerSet = new Set(connectedPeerAddresses.map((peerAddress) => peerAddress?.toLowerCase()));
 
   return seatedPlayers.map((player, index) => {
     const isEmptySeat = Boolean(player.isEmptySeat);
     const isMe = !isEmptySeat && player.address?.toLowerCase() === currentUserAddress?.toLowerCase();
     const originalIndex = isEmptySeat ? -1 : tableData.players.findIndex((candidate) => candidate.address === player.address);
     const isTheirTurn = !isEmptySeat && tableData.current_hand?.current_player === originalIndex.toString();
-    const isNetworkJoined = isMe ? currentUserNetworkJoined : hasAnnounceKey(player);
+    const isNetworkJoined = isMe
+      ? currentUserNetworkJoined
+      : connectedPeerSet.has(player.address?.toLowerCase());
 
     return (
       <Player
