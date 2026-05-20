@@ -6,6 +6,16 @@ export default function DebugConsole({
   onSubmit,
   onDealTest,
 }) {
+  const getMessageClassName = (message) => {
+    if (message.sender === 'Me') return 'text-cyan-400';
+    if (message.sender === 'RTC') {
+      if (message.level === 'error') return 'text-red-300';
+      if (message.level === 'warn') return 'text-amber-300';
+      return 'text-sky-300';
+    }
+    return 'text-teal-500';
+  };
+
   return (
     <div className="absolute bottom-[0px] right-[0px] w-64 h-48 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-30">
       <div className="bg-slate-950 px-3 py-1 border-b border-teal-500/10 flex justify-between">
@@ -20,7 +30,7 @@ export default function DebugConsole({
       </button>
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
         {messages.map((message, index) => (
-          <div key={index} className={`text-[11px] font-mono ${message.sender === 'Me' ? 'text-cyan-400' : 'text-teal-500'}`}>
+          <div key={index} className={`text-[11px] font-mono ${getMessageClassName(message)}`}>
             <span className="opacity-50">[{message.sender}]:</span> {message.text}
           </div>
         ))}

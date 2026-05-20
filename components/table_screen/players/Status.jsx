@@ -31,7 +31,7 @@ export default function Status({
         disabled={isJoiningNetwork}
         className="mt-1 rounded-md border border-amber-300/70 bg-amber-400/10 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-amber-200 shadow-[0_0_18px_rgba(251,191,36,0.25)] transition-all hover:border-amber-200 hover:bg-amber-300 hover:text-slate-950 disabled:opacity-60 motion-safe:animate-pulse"
       >
-        Sitting out
+        Take a seat
       </button>
     );
   }

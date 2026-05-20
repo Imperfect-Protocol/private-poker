@@ -39,7 +39,10 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
       (player) => player.address?.toLowerCase() === address?.toLowerCase(),
     );
   }, [address, liveTableData.players]);
-  const currentUserNetworkJoined = Boolean(blsKeys && hasAnnounceKey(currentPlayer));
+  const currentUserCanUseNetwork = Boolean(blsKeys && hasAnnounceKey(currentPlayer));
+  const tableCapacity = Number(liveTableData?.maxSeats || liveTableData?.max_players || 0);
+  const seatedPlayerCount = liveTableData?.players?.length ?? 0;
+  const isTableFull = tableCapacity > 0 && seatedPlayerCount >= tableCapacity;
 
   useEffect(() => {
     setLiveTableData((current) => ({
@@ -51,23 +54,31 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     }));
   }, [initialTableData]);
 
+  const addDebugMessage = useCallback((message) => {
+    setMessages((prev) => [...prev, message].slice(-160));
+  }, []);
+
   const joinNetwork = useCallback(async ({ force = false } = {}) => {
     if (!currentPlayer) return;
-    if (currentUserNetworkJoined || isGenerating || !tableSessionDetails.tableId) return;
+    if (blsKeys || isGenerating || !tableSessionDetails.tableId) return;
     if (!force && promptedSessionRef.current === tableSessionDetails.tableId) return;
 
     promptedSessionRef.current = tableSessionDetails.tableId;
     try {
       await generateKeys();
       if (!hasAnnounceKey(currentPlayer)) {
-        console.warn('This table entry does not have an announce public key on-chain. Rejoin/create must pass the table-scoped key in the table transaction.');
+        const text = 'This table entry does not have an announce public key on-chain. Rejoin/create must pass the table-scoped key in the table transaction.';
+        console.warn(text);
+        addDebugMessage({ text, sender: "RTC", level: "warn" });
       }
     } catch (error) {
+      addDebugMessage({ text: `BLS session failed: ${error.message}`, sender: "RTC", level: "error" });
       console.error('Failed to authorize table BLS session:', error);
     }
   }, [
+    addDebugMessage,
+    blsKeys,
     currentPlayer,
-    currentUserNetworkJoined,
     generateKeys,
     isGenerating,
     tableSessionDetails.tableId,
@@ -75,7 +86,7 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
 
   useEffect(() => {
     if (!currentPlayer) return;
-    if (currentUserNetworkJoined || isGenerating || !tableSessionDetails.tableId) return;
+    if (blsKeys || isGenerating || !tableSessionDetails.tableId) return;
     if (promptedSessionRef.current === tableSessionDetails.tableId) return;
 
     const timer = setTimeout(() => {
@@ -83,29 +94,49 @@ export default function ActiveTableView({ tableData: initialTableData, lobbyId, 
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [currentPlayer, currentUserNetworkJoined, isGenerating, joinNetwork, tableSessionDetails.tableId]);
+  }, [blsKeys, currentPlayer, isGenerating, joinNetwork, tableSessionDetails.tableId]);
 
   // 3. Initialize RTC
-  const { connectedPeerCount, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(tableId, lobbyId, currentUserNetworkJoined ? blsKeys : null, liveTableData.players, (incoming) => {
-    if (incoming.type === "GAME_UPDATE") {
-      setLiveTableData(prev => ({
-        ...prev,
-        current_hand: {
-          ...prev.current_hand,
-          ...incoming.data
-        }
-      }));
-    } else if (incoming.type === "CHAT") {
-      setMessages((prev) => [...prev, { text: incoming.text, sender: "Peer" }].slice(-80));
-    }
-  });
+  const handleRtcActivity = useCallback((activity) => {
+    if (!activity.display) return;
+
+    addDebugMessage({
+      text: activity.text,
+      sender: "RTC",
+      level: activity.text?.includes("failed") || activity.text?.includes("error") ? "error" : "info",
+    });
+  }, [addDebugMessage]);
+
+  const { connectedPeerCount, expectedPeerCount, status, sendMessage, topologyLabel } = usePokerRTC(
+    tableId,
+    lobbyId,
+    currentUserCanUseNetwork ? blsKeys : null,
+    liveTableData.players,
+    (incoming) => {
+      if (incoming.type === "GAME_UPDATE") {
+        setLiveTableData(prev => ({
+          ...prev,
+          current_hand: {
+            ...prev.current_hand,
+            ...incoming.data
+          }
+        }));
+      } else if (incoming.type === "CHAT") {
+        addDebugMessage({ text: incoming.text, sender: "Peer" });
+      }
+    },
+    handleRtcActivity,
+    isTableFull,
+    tableCapacity,
+  );
+  const currentUserNetworkJoined = currentUserCanUseNetwork && status === "connected";
 
   const handleSend = (e) => {
     e.preventDefault();
     if (!input) return;
 
     sendMessage({ type: "CHAT", text: input });
-    setMessages((prev) => [...prev, { text: input, sender: "Me" }].slice(-80));
+    addDebugMessage({ text: input, sender: "Me" });
     setInput("");
   };
 
