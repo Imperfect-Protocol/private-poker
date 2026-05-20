@@ -10,16 +10,6 @@ import Title from '@/components/table_screen/Title';
 export default function TableScreen({
   tableData,
   currentUserAddress,
-  currentUserBlsKey,
-  currentUserNetworkJoined,
-  currentUserNetworkStatus,
-  connectedPeerAddresses = [],
-  isJoiningNetwork,
-  onJoinNetwork,
-  status,
-  expectedPeerCount = 0,
-  connectedPeerCount = 0,
-  topologyLabel = '',
   showActionBar = false,
   actionBarProps = {},
   debugConsole = null,
@@ -32,11 +22,6 @@ export default function TableScreen({
     <main className="min-h-screen bg-slate-950 p-4 md:px-4 md:py-4 text-white relative flex flex-col">
       <Title
         tableName={tableData.name}
-        status={status}
-        currentUserNetworkJoined={currentUserNetworkJoined}
-        expectedPeerCount={expectedPeerCount}
-        connectedPeerCount={connectedPeerCount}
-        topologyLabel={topologyLabel}
       />
 
       <div className="flex-1 flex items-center justify-center relative">
@@ -59,12 +44,6 @@ export default function TableScreen({
           <TablePlayers
             tableData={tableData}
             currentUserAddress={currentUserAddress}
-            currentUserBlsKey={currentUserBlsKey}
-            currentUserNetworkJoined={currentUserNetworkJoined}
-            currentUserNetworkStatus={currentUserNetworkStatus}
-            connectedPeerAddresses={connectedPeerAddresses}
-            isJoiningNetwork={isJoiningNetwork}
-            onJoinNetwork={onJoinNetwork}
           />
         </div>
 

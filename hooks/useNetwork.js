@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from 'wagmi';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
+import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { PokerRtcSession } from '@/lib/PokerRtcSession';
-import {
-  DEFAULT_RTC_TOPOLOGY,
-  getRtcTopologyLabel,
-  getRtcTopologyPlan,
-} from '@/lib/rtcTopology';
-
-const sessionsByTable = new Map();
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
 
@@ -17,7 +11,16 @@ function makePlayersKey(players = []) {
     .map((player) => [
       normalizeAddress(player?.address),
       player?.annoncePublicKey ?? '',
-      player?.chips ?? '',
+    ].join('/'))
+    .join('|');
+}
+
+function makeSeatsKey(seats = []) {
+  return seats
+    .map((seat) => [
+      seat?.seatNo ?? '',
+      normalizeAddress(seat?.address),
+      seat?.announcePublicKey ?? '',
     ].join('/'))
     .join('|');
 }
@@ -31,7 +34,6 @@ function makeSessionConfigKey({
   playersKey,
   isTableFull,
   tableCapacity,
-  topology,
 }) {
   return [
     normalizeAddress(address),
@@ -41,98 +43,50 @@ function makeSessionConfigKey({
     privateKey ? 'private-key-ready' : '',
     isTableFull ? 'full' : 'waiting',
     tableCapacity ?? 0,
-    topology ?? DEFAULT_RTC_TOPOLOGY,
     playersKey,
   ].join('::');
-}
-
-function getSessionEntry(key, createSession) {
-  const existing = sessionsByTable.get(key);
-  if (existing) return existing;
-
-  const entry = {
-    callbacksInstalled: false,
-    destroyTimer: null,
-    loggedTopologyKeys: new Set(),
-    loggedUpdateKeys: new Set(),
-    session: createSession(),
-    users: 0,
-  };
-  sessionsByTable.set(key, entry);
-  return entry;
 }
 
 export function useNetwork({
   tableId,
   lobbyId,
-  blsKeys,
+  tableDetails,
   seats = [],
-  onMessage,
   onActivity,
   isTableFull = false,
   tableCapacity = 0,
-  topology = DEFAULT_RTC_TOPOLOGY,
 } = {}) {
   const { address } = useConnection();
   const { sendSignal } = usePrivatePokerSignal();
+  const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
+  const loggedUpdateKeysRef = useRef(new Set());
+  const seatsKey = makeSeatsKey(seats);
   const players = useMemo(
     () => seats
-      .filter((seat) => seat?.[1])
+      .filter((seat) => seat?.address)
       .map((seat) => ({
-        seatNo: seat[0],
-        address: seat[1],
-        annoncePublicKey: seat[2],
+        seatNo: seat.seatNo,
+        address: seat.address,
+        annoncePublicKey: seat.announcePublicKey,
       })),
-    [seats],
+    [seatsKey],
   );
-  const sessionKey = `${lobbyId ?? 'unknown'}:${tableId ?? 'unknown'}`;
   const playersKey = makePlayersKey(players);
   const sendSignalRef = useRef(sendSignal);
   const onActivityRef = useRef(onActivity);
-  const onMessageRef = useRef(onMessage);
-  const onStateChangeRef = useRef(() => {});
 
   sendSignalRef.current = sendSignal;
   onActivityRef.current = onActivity;
-  onMessageRef.current = onMessage;
 
-  const [sessionEntry] = useState(() => getSessionEntry(
-    sessionKey,
+  const [session] = useState(
     () => new PokerRtcSession({
       sendSignal: (...args) => sendSignalRef.current(...args),
       onActivity: (...args) => onActivityRef.current?.(...args),
-      onMessage: (...args) => onMessageRef.current?.(...args),
-      onStateChange: (...args) => onStateChangeRef.current?.(...args),
+      onStateChange: () => {},
     }),
-  ));
-  const session = sessionEntry.session;
-  const [snapshot, setSnapshot] = useState(() => session.getSnapshot());
-  onStateChangeRef.current = setSnapshot;
-
-  const topologyPlan = useMemo(() => {
-    const plan = getRtcTopologyPlan(players, address, topology);
-    const topologyKey = `${address ?? ''}::${topology ?? DEFAULT_RTC_TOPOLOGY}::${playersKey}`;
-    if (!sessionEntry.loggedTopologyKeys.has(topologyKey)) {
-      sessionEntry.loggedTopologyKeys.add(topologyKey);
-      console.log('topologyPlan', plan);
-    }
-    return plan;
-  }, [address, players, playersKey, sessionEntry, topology]);
-
-  useEffect(() => {
-    if (sessionEntry.callbacksInstalled) return;
-
-    sessionEntry.callbacksInstalled = true;
-    console.log('session.setCallbacks()');
-    session.setCallbacks({
-      sendSignal: (...args) => sendSignalRef.current(...args),
-      onActivity: (...args) => onActivityRef.current?.(...args),
-      onMessage: (...args) => onMessageRef.current?.(...args),
-      onStateChange: (...args) => onStateChangeRef.current?.(...args),
-    });
-  }, [session, sessionEntry]);
+  );
 
   useEffect(() => {
     const sessionConfigKey = makeSessionConfigKey({
@@ -144,14 +98,18 @@ export function useNetwork({
       playersKey,
       isTableFull,
       tableCapacity,
-      topology,
     });
 
-    if (!sessionEntry.loggedUpdateKeys.has(sessionConfigKey)) {
-      sessionEntry.loggedUpdateKeys.add(sessionConfigKey);
+    if (!loggedUpdateKeysRef.current.has(sessionConfigKey)) {
+      loggedUpdateKeysRef.current.add(sessionConfigKey);
       console.log('session.update()');
     }
 
+    session.setCallbacks({
+      sendSignal: (...args) => sendSignalRef.current(...args),
+      onActivity: (...args) => onActivityRef.current?.(...args),
+      onStateChange: () => {},
+    });
     session.update({
       address,
       tableId,
@@ -161,21 +119,16 @@ export function useNetwork({
       players,
       isTableFull,
       tableCapacity,
-      topology,
     });
   }, [
     address,
     isTableFull,
     lobbyId,
-    players,
     playersKey,
     privateKey,
     publicKey,
-    session,
-    sessionEntry,
     tableCapacity,
     tableId,
-    topology,
   ]);
 
   useListenForSignals(address, async (signalData) => {
@@ -183,44 +136,40 @@ export function useNetwork({
     await session.handleSignal(signalData);
   });
 
-  useEffect(() => {
-    sessionEntry.users += 1;
-    if (sessionEntry.destroyTimer) {
-      clearTimeout(sessionEntry.destroyTimer);
-      sessionEntry.destroyTimer = null;
-    }
-
-    return () => {
-      sessionEntry.users -= 1;
-      if (sessionEntry.users > 0) return;
-
-      sessionEntry.destroyTimer = setTimeout(() => {
-        if (sessionEntry.users > 0) return;
-
-        console.log('session.destroy()');
-        session.destroy();
-        sessionsByTable.delete(sessionKey);
-      }, 1000);
-    };
-  }, [session, sessionEntry, sessionKey]);
+  useEffect(() => () => {
+    console.log('session.destroy()');
+    session.destroy();
+  }, [session]);
 
   const publishMessage = useCallback((message) => {
     console.log('session.publishMessage()', message);
     session.publishMessage(message);
   }, [session]);
 
-  const subscribeTo = useCallback((playerAddress, playerAnnouncePubKey) => {
-    session.subscribeTo(playerAddress, playerAnnouncePubKey);
-  }, [session]);
+  const subscribeTo = useCallback(async (playerAddress, playerAnnouncePubKey, callback) => {
+    const keys = blsKeys ?? await generateKeys(tableDetails);
+    session.update({
+      address,
+      tableId,
+      lobbyId,
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      players,
+      isTableFull,
+      tableCapacity,
+    });
+    await session.subscribeTo(playerAddress, playerAnnouncePubKey, callback);
+  }, [
+    address,
+    blsKeys,
+    generateKeys,
+    isTableFull,
+    lobbyId,
+    playersKey,
+    tableCapacity,
+    tableDetails,
+    tableId,
+  ]);
 
-  const result = [publishMessage, subscribeTo];
-  return Object.assign(result, {
-    connectedPeerCount: snapshot.connectedPeerCount,
-    connectedPeerAddresses: snapshot.connectedPeerAddresses,
-    expectedPeerCount: snapshot.expectedPeerCount,
-    status: snapshot.status,
-    topology: topologyPlan.topology,
-    topologyLabel: getRtcTopologyLabel(topologyPlan.topology),
-    topologyPlan,
-  });
+  return [publishMessage, subscribeTo];
 }

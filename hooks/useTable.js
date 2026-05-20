@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from 'wagmi';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
-import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { useNetwork } from '@/hooks/useNetwork';
+import { useNetworkTopology } from '@/hooks/useNetworkTopology';
 import { CHAIN_POLLING_INTERVAL } from '@/lib/chain';
-import { DEFAULT_RTC_TOPOLOGY, getRtcTopologyPlan } from '@/lib/rtcTopology';
-
-const hasAnnounceKey = (player) => {
-  const key = player?.annoncePublicKey;
-  if (!key) return false;
-  if (typeof key !== 'string') return true;
-  return key !== '0x' && key.length > 2;
-};
 
 const mapTableDetail = (detail) => ({
   id: detail.info.id,
   name: detail.info.name,
+  gameType: detail.info.gameType ?? 1,
   buyin: detail.info.buyIn,
   maxSeats: detail.info.flags,
   players: detail.players,
@@ -26,18 +19,31 @@ const buildSeats = (tableData) => {
   const seatCount = Number(tableData?.maxSeats || tableData?.max_players || 0);
   return Array.from({ length: seatCount }, (_, index) => {
     const player = tableData?.players?.[index];
-    return [index, player?.address ?? null, player?.annoncePublicKey ?? null];
+    return {
+      seatNo: index,
+      address: player?.address ?? null,
+      announcePublicKey: player?.annoncePublicKey ?? null,
+    };
   });
 };
+
+const normalizeAddress = (value) => value?.toLowerCase() ?? '';
+
+const makeSeatsKey = (seats) => seats
+  .map((seat) => [
+    seat.seatNo,
+    normalizeAddress(seat.address),
+    seat.announcePublicKey ?? '',
+  ].join('/'))
+  .join('|');
 
 export function useTable({
   tableId,
   lobbyId,
   initialTableData = null,
   initialIsSeated = null,
-  onMessage,
   onActivity,
-  topology = DEFAULT_RTC_TOPOLOGY,
+  onSeat: onSeatEvent,
 } = {}) {
   const { address } = useConnection();
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
@@ -45,6 +51,8 @@ export function useTable({
   const [isLoading, setIsLoading] = useState(!initialTableData);
   const [isSeated, setIsSeated] = useState(initialIsSeated);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const onSeatEventRef = useRef(onSeatEvent);
+  onSeatEventRef.current = onSeatEvent;
 
   const activeTableId = liveTableData?.id ?? tableId;
   const tableName = liveTableData?.name ?? '';
@@ -52,6 +60,7 @@ export function useTable({
   const seatedPlayerCount = liveTableData?.players?.length ?? 0;
   const isTableFull = tableCapacity > 0 && seatedPlayerCount >= tableCapacity;
   const seats = useMemo(() => buildSeats(liveTableData), [liveTableData]);
+  const seatsKey = makeSeatsKey(seats);
 
   const tableSessionDetails = useMemo(() => ({
     lobbyId,
@@ -62,72 +71,53 @@ export function useTable({
     stakesLabel: liveTableData?.stakes,
   }), [activeTableId, lobbyId, liveTableData?.blinds, liveTableData?.buyin, liveTableData?.stakes, tableName]);
 
-  const { blsKeys, isGenerating, generateKeys } = useRequireBLS(tableSessionDetails);
-  const promptedSessionRef = useRef(null);
+  const subscribedPrecedingPeerKeyRef = useRef(null);
 
-  const currentPlayer = useMemo(() => (
-    liveTableData?.players?.find(
-      (player) => player.address?.toLowerCase() === address?.toLowerCase(),
-    )
-  ), [address, liveTableData?.players]);
-
-  const currentUserCanUseNetwork = Boolean(blsKeys && hasAnnounceKey(currentPlayer));
+  const onSeat = useCallback((seatNo, seatEvent) => {
+    onSeatEventRef.current?.(seatNo, seatEvent);
+  }, []);
 
   const network = useNetwork({
     tableId: activeTableId,
     lobbyId,
-    blsKeys: currentUserCanUseNetwork ? blsKeys : null,
+    tableDetails: tableSessionDetails,
     seats,
-    onMessage,
     onActivity,
     isTableFull,
     tableCapacity,
-    topology,
   });
   const [publishMessage, subscribeTo] = network;
+  const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
-  const joinNetwork = useCallback(async ({ force = false } = {}) => {
-    if (!currentPlayer) return;
-    if (blsKeys || isGenerating || !tableSessionDetails.tableId) return;
-    if (!force && promptedSessionRef.current === tableSessionDetails.tableId) return;
+  const mySeatNo = useMemo(() => (
+    seats.find((seat) => normalizeAddress(seat.address) === normalizeAddress(address))?.seatNo ?? null
+  ), [address, seatsKey]);
 
-    promptedSessionRef.current = tableSessionDetails.tableId;
-    await generateKeys();
-  }, [
-    blsKeys,
-    currentPlayer,
-    generateKeys,
-    isGenerating,
-    tableSessionDetails.tableId,
-  ]);
-
-  useEffect(() => {
-    if (!currentPlayer) return;
-    if (blsKeys || isGenerating || !tableSessionDetails.tableId) return;
-    if (promptedSessionRef.current === tableSessionDetails.tableId) return;
-
-    const timer = setTimeout(() => {
-      joinNetwork();
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [blsKeys, currentPlayer, isGenerating, joinNetwork, tableSessionDetails.tableId]);
+  const previousSeatNo = getPreviousSeat(mySeatNo);
+  const previousSeat = previousSeatNo === null ? null : seats[previousSeatNo];
+  const subscriptionKey = [
+    normalizeAddress(address),
+    lobbyId ?? '',
+    activeTableId ?? '',
+    previousSeatNo ?? '',
+    normalizeAddress(previousSeat?.address),
+    previousSeat?.announcePublicKey ?? '',
+  ].join('::');
 
   useEffect(() => {
-    if (!currentUserCanUseNetwork || !isTableFull) return;
+    if (!isTableFull || !previousSeat?.address) return;
+    if (subscribedPrecedingPeerKeyRef.current === subscriptionKey) return;
 
-    const players = seats
-      .filter((seat) => seat?.[1])
-      .map((seat) => ({
-        seatNo: seat[0],
-        address: seat[1],
-        annoncePublicKey: seat[2],
-      }));
-    const plan = getRtcTopologyPlan(players, address, topology);
-    plan.outboundTargets.forEach((player) => {
-      subscribeTo(player.address, player.annoncePublicKey);
+    subscribedPrecedingPeerKeyRef.current = subscriptionKey;
+    const { address, announcePublicKey } = previousSeat;
+    subscribeTo(address, announcePublicKey, (seatNo, event) => {
+      onSeat(seatNo, {
+        kind: 'network',
+        address,
+        event,
+      });
     });
-  }, [address, currentUserCanUseNetwork, isTableFull, seats, subscribeTo, topology]);
+  }, [isTableFull, subscriptionKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,19 +174,27 @@ export function useTable({
     };
   }, [address, lobbyId, refreshTrigger, tableId]);
 
-  const onPlayer = useMemo(() => ({
-    address,
-    seatNo: seats.find((seat) => seat?.[1]?.toLowerCase() === address?.toLowerCase())?.[0] ?? null,
-    announcePublicKey: currentPlayer?.annoncePublicKey ?? null,
-    isSeated: isSeated === true,
-    hasBlsKey: Boolean(blsKeys),
-    isGenerating,
-    canUseNetwork: currentUserCanUseNetwork,
-    joinNetwork,
-  }), [address, blsKeys, currentPlayer?.annoncePublicKey, currentUserCanUseNetwork, isGenerating, isSeated, joinNetwork, seats]);
+  useEffect(() => {
+    seats.forEach((seat) => {
+      if (!seat.address) return;
+      onSeat(seat.seatNo, {
+        kind: 'blockchain',
+        address: seat.address,
+        announcePublicKey: seat.announcePublicKey,
+      });
+    });
+  }, [seatsKey]);
 
-  const result = [activeTableId, tableName, lobbyId, liveTableData?.gameType, seats, onPlayer];
+  const currentSeat = useMemo(() => ({
+    address,
+    seatNo: mySeatNo,
+    isSeated: isSeated === true,
+  }), [address, isSeated, mySeatNo]);
+
+  const result = [activeTableId, tableName, lobbyId, liveTableData?.gameType ?? 1, seats, onSeat];
   return Object.assign(result, {
+    onSeat,
+    currentSeat,
     tableData: liveTableData,
     setTableData: setLiveTableData,
     isLoading,
@@ -204,15 +202,8 @@ export function useTable({
     setIsSeated,
     refresh: () => setRefreshTrigger((current) => current + 1),
     hasJoinedTable: isSeated === true,
-    blsKeys,
     network,
     publishMessage,
     subscribeTo,
-    connectedPeerCount: network.connectedPeerCount,
-    connectedPeerAddresses: network.connectedPeerAddresses,
-    expectedPeerCount: network.expectedPeerCount,
-    networkStatus: network.status,
-    topologyLabel: network.topologyLabel,
-    currentUserNetworkJoined: currentUserCanUseNetwork && network.status === 'connected',
   });
 }

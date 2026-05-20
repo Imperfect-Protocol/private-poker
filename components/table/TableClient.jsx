@@ -63,31 +63,48 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     }
   }, [addDebugMessage]);
 
+  const handleSeatEvent = useCallback((seatNo, seatEvent) => {
+    if (seatEvent.kind !== 'network') return;
+    const networkEvent = seatEvent.event;
+    if (networkEvent?.kind === 'message') {
+      handleRtcMessage(networkEvent.message);
+      return;
+    }
+    if (networkEvent?.kind === 'network') {
+      addDebugMessage({
+        text: `Seat ${seatNo} ${networkEvent.state}`,
+        sender: 'RTC',
+        level: 'info',
+      });
+    }
+  }, [addDebugMessage, handleRtcMessage]);
+
   const table = useTable({
     tableId,
     lobbyId,
     initialTableData: bootTableData,
     initialIsSeated: bootIsSeated,
-    onMessage: handleRtcMessage,
     onActivity: handleRtcActivity,
+    onSeat: handleSeatEvent,
   });
   tableRef.current = table;
+  const currentPlayerAddress = table.currentSeat?.address ?? null;
 
   useEffect(() => {
     setShowBuyInDialog(true);
     setBuyInDialogReady(false);
-  }, [lobbyId, tableId, table.onPlayer.address]);
+  }, [lobbyId, tableId, currentPlayerAddress]);
 
   useEffect(() => {
     setBuyInDialogReady(false);
-    if (!table.tableData || !table.onPlayer.address || table.isSeated !== false || !showBuyInDialog) return;
+    if (!table.tableData || !currentPlayerAddress || table.isSeated !== false || !showBuyInDialog) return;
 
     const timer = setTimeout(() => {
       setBuyInDialogReady(true);
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [showBuyInDialog, table.isSeated, table.onPlayer.address, table.tableData]);
+  }, [showBuyInDialog, table.isSeated, currentPlayerAddress, table.tableData]);
 
   if (table.isLoading || !table.tableData) {
     return (

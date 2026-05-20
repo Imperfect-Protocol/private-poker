@@ -10,10 +10,6 @@ export default function TablePlayer({
   isEmptySeat,
   isTheirTurn,
   heroCards = [],
-  isNetworkJoined,
-  currentUserBlsKey,
-  isJoiningNetwork,
-  onJoinNetwork,
 }) {
   return (
     <div className={`absolute ${positionClass} transition-all duration-700 ease-in-out z-20`}>
@@ -46,10 +42,6 @@ export default function TablePlayer({
             isEmptySeat={isEmptySeat}
             isMe={isMe}
             player={player}
-            isNetworkJoined={isNetworkJoined}
-            currentUserBlsKey={currentUserBlsKey}
-            isJoiningNetwork={isJoiningNetwork}
-            onJoinNetwork={onJoinNetwork}
           />
         </div>
       </div>
