@@ -74,6 +74,9 @@ export function useNetwork({
     [seatsKey],
   );
   const playersKey = makePlayersKey(players);
+  const mySeatAnnouncePublicKey = players.find(
+    (player) => normalizeAddress(player.address) === normalizeAddress(address),
+  )?.annoncePublicKey;
   const sendSignalRef = useRef(sendSignal);
   const onActivityRef = useRef(onActivity);
 
@@ -148,6 +151,15 @@ export function useNetwork({
 
   const subscribeTo = useCallback(async (playerAddress, playerAnnouncePubKey, callback) => {
     const keys = blsKeys ?? await generateKeys(tableDetails);
+    const generatedPublicKey = `0x${keys.publicKey}`;
+    if (
+      mySeatAnnouncePublicKey
+      && normalizeAddress(generatedPublicKey) !== normalizeAddress(mySeatAnnouncePublicKey)
+    ) {
+      throw new Error(
+        'Generated BLS key does not match the announce public key stored on-chain for this table. Rejoin this table so the table stores the current deterministic announce key.',
+      );
+    }
     session.update({
       address,
       tableId,
@@ -165,6 +177,7 @@ export function useNetwork({
     generateKeys,
     isTableFull,
     lobbyId,
+    mySeatAnnouncePublicKey,
     playersKey,
     tableCapacity,
     tableDetails,

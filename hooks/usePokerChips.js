@@ -1,7 +1,8 @@
-import { useConnection, usePublicClient, useWriteContract } from 'wagmi';
+import { useConnection, useWriteContract } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
 import { CHIPS_CONTRACT_ADDRESS, LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 
 const CHIPS_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -10,7 +11,6 @@ const CHIPS_ABI = parseAbi([
 ]);
 
 export function usePokerChips() {
-  const publicClient = usePublicClient();
   const { address } = useConnection();
   const { mutateAsync } = useWriteContract();
 
@@ -29,13 +29,13 @@ export function usePokerChips() {
     if (amount === 0n) return;
 
     const [balance, allowance] = await Promise.all([
-      publicClient.readContract({
+      publicPokerClient.readContract({
         address: CHIPS_CONTRACT_ADDRESS,
         abi: CHIPS_ABI,
         functionName: 'balanceOf',
         args: [address],
       }),
-      publicClient.readContract({
+      publicPokerClient.readContract({
         address: CHIPS_CONTRACT_ADDRESS,
         abi: CHIPS_ABI,
         functionName: 'allowance',
@@ -56,7 +56,7 @@ export function usePokerChips() {
       args,
       account: address,
     };
-    const overrides = await getBufferedGasOverrides(publicClient, txRequest);
+    const overrides = await getBufferedGasOverrides(publicPokerClient, txRequest);
 
     const hash = await mutateAsync({
       address: CHIPS_CONTRACT_ADDRESS,
@@ -66,7 +66,7 @@ export function usePokerChips() {
       ...overrides,
     });
 
-    await publicClient.waitForTransactionReceipt({ hash });
+    await publicPokerClient.waitForTransactionReceipt({ hash });
   };
 
   return { ensureBuyInAllowance };

@@ -1,19 +1,12 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useConnection, useSignMessage } from 'wagmi';
+import { useConnection, useSignTypedData } from 'wagmi';
 import { keccak256, toBytes, toHex } from 'viem';
 import * as bls from '@noble/bls12-381';
+import { BLS_TABLE_SESSION_DOMAIN, BLS_TABLE_SESSION_TYPES } from '@/lib/constants';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
-const STAKES_BY_BUY_IN = [
-    { buyIn: 1, name: 'Micro Stakes', blinds: '$0.01/$0.02' },
-    { buyIn: 10, name: 'Low Stakes', blinds: '$0.10/$0.20' },
-    { buyIn: 100, name: 'Mid Stakes', blinds: '$1/$2' },
-    { buyIn: 1000, name: 'High Stakes', blinds: '$10/$20' },
-    { buyIn: 10000, name: 'Large Stakes', blinds: '$100/$200' },
-];
-
 export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     if (!tableDetails?.lobbyId || !tableDetails?.tableId || !walletAddress) return null;
     return [
@@ -23,45 +16,23 @@ export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     ].join(':');
 }
 
-function getStakeDetails(tableDetails) {
-    const buyIn = Number(tableDetails.buyIn ?? tableDetails.buyin ?? 0);
-    const option = STAKES_BY_BUY_IN.find((stake) => stake.buyIn === buyIn);
-
+function buildDerivationTypedData(tableDetails) {
     return {
-        buyInLabel: buyIn > 0 ? `$${buyIn} CHIPS` : 'Table buy-in',
-        blindsLabel: option?.blinds ?? tableDetails.blindsLabel ?? tableDetails.blinds ?? 'Table blinds',
-        stakesLabel: option?.name ?? tableDetails.stakesLabel ?? 'Table stakes',
+        domain: BLS_TABLE_SESSION_DOMAIN,
+        types: BLS_TABLE_SESSION_TYPES,
+        primaryType: 'PrivatePokerTableSession',
+        message: {
+            tableId: BigInt(tableDetails.tableId),
+            lobbyId: BigInt(tableDetails.lobbyId),
+        },
     };
-}
-
-function buildDerivationMessage(tableDetails) {
-    const { buyInLabel, blindsLabel, stakesLabel } = getStakeDetails(tableDetails);
-
-    return `Welcome to PrivatePoker!
-
-You are taking a seat at a peer-to-peer Private Poker table.
-
-Please sign this message to create your table BLS key pair.
-This key lets your browser join the private peer-to-peer table network,
-encrypt table messages, and sign poker actions for this table only.
-
-Table Details
--------------
-Table: ${tableDetails.tableName ?? 'Private Poker Table'}
-Table Scope: ${tableDetails.tableId}::${tableDetails.lobbyId}
-Buy-in: ${buyInLabel}
-Blinds: ${blindsLabel}
-Stakes: ${stakesLabel}
-
-This is not a blockchain transaction.
-It costs no gas and does not move chips.`;
 }
 
 const BLSContext = createContext(null);
 
 export function BLSProvider({ children }) {
     const { address, isConnected } = useConnection();
-    const { mutateAsync } = useSignMessage();
+    const { mutateAsync } = useSignTypedData();
 
     const [tableKeys, setTableKeys] = useState({});
     const [isGenerating, setIsGenerating] = useState(false);
@@ -98,9 +69,7 @@ export function BLSProvider({ children }) {
         setIsGenerating(true);
 
         try {
-            const signature = await mutateAsync({
-                message: buildDerivationMessage(tableDetails),
-            });
+            const signature = await mutateAsync(buildDerivationTypedData(tableDetails));
             const seedHex = keccak256(signature);
             const privateKeyBytes = toBytes(seedHex);
             const publicKeyBytes = bls.getPublicKey(privateKeyBytes);

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { usePublicClient, useWatchBlockNumber } from 'wagmi';
 import { CHAIN_POLLING_INTERVAL } from '@/lib/chain';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 
 export function usePublicContractEvent({
   address,
@@ -9,7 +9,6 @@ export function usePublicContractEvent({
   enabled = true,
   onLogs,
 }) {
-  const publicClient = usePublicClient();
   const onLogsRef = useRef(onLogs);
   const seenLogsRef = useRef(new Set());
   const lastBlockRef = useRef(null);
@@ -18,42 +17,63 @@ export function usePublicContractEvent({
     onLogsRef.current = onLogs;
   }, [onLogs]);
 
-  useWatchBlockNumber({
-    enabled: enabled && Boolean(address) && Boolean(publicClient),
-    poll: true,
-    pollingInterval: CHAIN_POLLING_INTERVAL,
-    onBlockNumber: async (blockNumber) => {
-      const fromBlock = lastBlockRef.current === null
-        ? blockNumber
-        : lastBlockRef.current + 1n;
-      lastBlockRef.current = blockNumber;
-      if (fromBlock > blockNumber) return;
+  useEffect(() => {
+    if (!enabled || !address) return undefined;
 
-      const logs = await publicClient.getContractEvents({
-        address,
-        abi,
-        eventName,
-        fromBlock,
-        toBlock: blockNumber,
-      });
+    let cancelled = false;
+    let timer = null;
+    let inFlight = false;
 
-      const freshLogs = logs.filter((log) => {
-        const logId = `${log.transactionHash}:${log.logIndex}`;
-        if (seenLogsRef.current.has(logId)) return false;
-        seenLogsRef.current.add(logId);
-        if (seenLogsRef.current.size > 500) {
-          const [oldestLogId] = seenLogsRef.current;
-          seenLogsRef.current.delete(oldestLogId);
+    const poll = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+
+      try {
+        const blockNumber = await publicPokerClient.getBlockNumber();
+        const fromBlock = lastBlockRef.current === null
+          ? blockNumber
+          : lastBlockRef.current + 1n;
+        lastBlockRef.current = blockNumber;
+
+        if (fromBlock <= blockNumber) {
+          const logs = await publicPokerClient.getContractEvents({
+            address,
+            abi,
+            eventName,
+            fromBlock,
+            toBlock: blockNumber,
+          });
+
+          const freshLogs = logs.filter((log) => {
+            const logId = `${log.transactionHash}:${log.logIndex}`;
+            if (seenLogsRef.current.has(logId)) return false;
+            seenLogsRef.current.add(logId);
+            if (seenLogsRef.current.size > 500) {
+              const [oldestLogId] = seenLogsRef.current;
+              seenLogsRef.current.delete(oldestLogId);
+            }
+            return true;
+          });
+
+          if (freshLogs.length > 0) {
+            onLogsRef.current?.(freshLogs);
+          }
         }
-        return true;
-      });
-
-      if (freshLogs.length > 0) {
-        onLogsRef.current?.(freshLogs);
+      } catch (error) {
+        console.debug(`[chain debug] ${eventName} watcher failed`, error);
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          timer = setTimeout(poll, CHAIN_POLLING_INTERVAL);
+        }
       }
-    },
-    onError: (error) => {
-      console.debug(`[chain debug] ${eventName} watcher failed`, error);
-    },
-  });
+    };
+
+    poll();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [address, enabled, eventName]);
 }

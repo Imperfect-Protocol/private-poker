@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useConnection, usePublicClient, useWriteContract } from 'wagmi';
+import { useConnection, useWriteContract } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
 import { SIGNAL_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
 
 const SIGNAL_ABI = parseAbi([
@@ -13,7 +14,6 @@ const SIGNAL_ABI = parseAbi([
 const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
 
 export function usePrivatePokerSignal() {
-    const publicClient = usePublicClient();
     const { address } = useConnection();
     const { mutateAsync, isPending } = useWriteContract();
 
@@ -40,7 +40,7 @@ export function usePrivatePokerSignal() {
             encryptedData,
         ];
         const overrides = address
-            ? await getBufferedGasOverrides(publicClient, {
+            ? await getBufferedGasOverrides(publicPokerClient, {
                 address: SIGNAL_CONTRACT_ADDRESS,
                 abi: SIGNAL_ABI,
                 functionName: 'sendSignal',
@@ -56,7 +56,7 @@ export function usePrivatePokerSignal() {
             args,
             ...overrides,
         });
-    }, [address, mutateAsync, publicClient]);
+    }, [address, mutateAsync]);
 
     return { sendSignal, isSendingSignal: isPending };
 }

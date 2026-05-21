@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useConnection, usePublicClient, useWriteContract } from 'wagmi';
+import { useConnection, useWriteContract } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
 import { LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
 
 const LOBBY_ABI = parseAbi([
@@ -28,14 +29,13 @@ const LOBBY_ABI = parseAbi([
 ]);
 
 export function usePrivatePokerLobby() {
-    const publicClient = usePublicClient();
     const { address } = useConnection();
     const { mutateAsync } = useWriteContract();
 
     const getWriteOverrides = async ({ functionName, args }) => {
         if (!address) return {};
 
-        return getBufferedGasOverrides(publicClient, {
+        return getBufferedGasOverrides(publicPokerClient, {
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName,
@@ -115,7 +115,7 @@ export function usePrivatePokerLobby() {
     // --- READ OPERATIONS ---
 
     const getLobbyCount = async () => {
-        const count = await publicClient.readContract({
+        const count = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getLobbyCount',
@@ -124,7 +124,7 @@ export function usePrivatePokerLobby() {
     };
 
     const getLobbyAt = async (index) => {
-        const blob = await publicClient.readContract({
+        const blob = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getLobbyAt',
@@ -134,7 +134,7 @@ export function usePrivatePokerLobby() {
     };
 
     const getLobbyById = async (lobbyId) => {
-        const blob = await publicClient.readContract({
+        const blob = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getLobbyById',
@@ -144,7 +144,7 @@ export function usePrivatePokerLobby() {
     };
 
     const getTableCount = async (lobbyId) => {
-        const count = await publicClient.readContract({
+        const count = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getTableCount',
@@ -154,7 +154,7 @@ export function usePrivatePokerLobby() {
     };
 
     const getTablesRange = async (lobbyId, offset, count) => {
-        const blobs = await publicClient.readContract({
+        const blobs = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getTablesRange',
@@ -164,7 +164,7 @@ export function usePrivatePokerLobby() {
     };
 
     const getTableDetail = async (lobbyId, tableId) => {
-        const blob = await publicClient.readContract({
+        const blob = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getTableDetail',
@@ -229,7 +229,7 @@ export function usePrivatePokerLobby() {
     const getPlayerTables = async (playerAddress) => {
         if (!playerAddress) return [];
 
-        const tableIds = await publicClient.readContract({
+        const tableIds = await publicPokerClient.readContract({
             address: LOBBY_CONTRACT_ADDRESS,
             abi: LOBBY_ABI,
             functionName: 'getPlayerTables',
