@@ -5,6 +5,7 @@ import { LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
+import { waitForWalletMutationDelay } from '@/lib/walletMutationDelay';
 
 const LOBBY_ABI = parseAbi([
     // Reads
@@ -46,6 +47,7 @@ export function usePrivatePokerLobby() {
 
     const writeLobbyContract = async ({ functionName, args }) => {
         const overrides = await getWriteOverrides({ functionName, args });
+        await waitForWalletMutationDelay();
 
         return await mutateAsync({
             address: LOBBY_CONTRACT_ADDRESS,

@@ -5,6 +5,7 @@ import { SIGNAL_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
+import { waitForWalletMutationDelay } from '@/lib/walletMutationDelay';
 
 const SIGNAL_ABI = parseAbi([
     "function sendSignal(uint256 lobby_id, uint256 table_id, address[] recipients, bytes[] encrypted_data)",
@@ -48,6 +49,7 @@ export function usePrivatePokerSignal() {
                 account: address,
             })
             : {};
+        await waitForWalletMutationDelay();
 
         return await mutateAsync({
             address: SIGNAL_CONTRACT_ADDRESS,

@@ -3,6 +3,7 @@ import { isAddress, parseAbi } from 'viem';
 import { CHIPS_CONTRACT_ADDRESS, LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
+import { waitForWalletMutationDelay } from '@/lib/walletMutationDelay';
 
 const CHIPS_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -57,6 +58,7 @@ export function usePokerChips() {
       account: address,
     };
     const overrides = await getBufferedGasOverrides(publicPokerClient, txRequest);
+    await waitForWalletMutationDelay();
 
     const hash = await mutateAsync({
       address: CHIPS_CONTRACT_ADDRESS,
