@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConnection } from 'wagmi';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { PokerRtcSession } from '@/lib/PokerRtcSession';
@@ -8,7 +9,8 @@ const normalizeAddress = (value) => value?.toLowerCase() ?? '';
 function makePlayersKey(players = []) {
   return players
     .map((player) => [
-      normalizeAddress(player?.buyinAddress),
+      normalizeAddress(player?.playerAddress),
+      normalizeAddress(player?.operator),
       player?.annoncePublicKey ?? '',
     ].join('/'))
     .join('|');
@@ -18,14 +20,16 @@ function makeSeatsKey(seats = []) {
   return seats
     .map((seat) => [
       seat?.seatNo ?? '',
-      normalizeAddress(seat?.buyinAddress),
+      normalizeAddress(seat?.playerAddress),
+      normalizeAddress(seat?.operator),
       seat?.announcePublicKey ?? '',
     ].join('/'))
     .join('|');
 }
 
 function makeSessionConfigKey({
-  buyinAddress,
+  playerAddress,
+  operator,
   tableId,
   lobbyId,
   publicKey,
@@ -35,12 +39,12 @@ function makeSessionConfigKey({
   tableCapacity,
 }) {
   return [
-    normalizeAddress(buyinAddress),
+    normalizeAddress(playerAddress),
+    normalizeAddress(operator),
     tableId ?? '',
     lobbyId ?? '',
     publicKey ?? '',
     privateKey ? 'private-key-ready' : '',
-    buyinAddress ?? '',
     isTableFull ? 'full' : 'waiting',
     tableCapacity ?? 0,
     playersKey,
@@ -56,27 +60,29 @@ export function useNetwork({
   isTableFull = false,
   tableCapacity = 0,
 } = {}) {
+  const { address: playerAddress } = useConnection();
   const { sendSignal } = usePrivatePokerSignal();
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
-  const buyinPrivateKey = blsKeys?.buyinPrivateKey;
-  const buyinAddress = blsKeys?.buyinAddress;
+  const operatorPrivateKey = blsKeys?.operatorPrivateKey;
+  const operator = blsKeys?.operator;
   const loggedUpdateKeysRef = useRef(new Set());
   const seatsKey = makeSeatsKey(seats);
   const players = useMemo(
     () => seats
-      .filter((seat) => seat?.buyinAddress)
+      .filter((seat) => seat?.playerAddress)
       .map((seat) => ({
         seatNo: seat.seatNo,
-        buyinAddress: seat.buyinAddress,
+        playerAddress: seat.playerAddress,
+        operator: seat.operator,
         annoncePublicKey: seat.announcePublicKey,
       })),
     [seatsKey],
   );
   const playersKey = makePlayersKey(players);
   const mySeatAnnouncePublicKey = players.find(
-    (player) => normalizeAddress(player.buyinAddress) === normalizeAddress(buyinAddress),
+    (player) => normalizeAddress(player.playerAddress) === normalizeAddress(playerAddress),
   )?.annoncePublicKey;
   const sendSignalRef = useRef(sendSignal);
   const onActivityRef = useRef(onActivity);
@@ -94,7 +100,8 @@ export function useNetwork({
 
   useEffect(() => {
     const sessionConfigKey = makeSessionConfigKey({
-      buyinAddress,
+      playerAddress,
+      operator,
       tableId,
       lobbyId,
       publicKey,
@@ -115,12 +122,13 @@ export function useNetwork({
       onStateChange: () => {},
     });
     session.update({
-      buyinAddress,
+      playerAddress,
+      operator,
       tableId,
       lobbyId,
       publicKey,
       privateKey,
-      buyinPrivateKey,
+      operatorPrivateKey,
       players,
       isTableFull,
       tableCapacity,
@@ -128,16 +136,17 @@ export function useNetwork({
   }, [
     isTableFull,
     lobbyId,
+    playerAddress,
     playersKey,
     privateKey,
     publicKey,
-    buyinPrivateKey,
-    buyinAddress,
+    operatorPrivateKey,
+    operator,
     tableCapacity,
     tableId,
   ]);
 
-  useListenForSignals(buyinAddress, async (signalData) => {
+  useListenForSignals(playerAddress, async (signalData) => {
     console.log('handleSignal', signalData);
     await session.handleSignal(signalData);
   });
@@ -152,7 +161,7 @@ export function useNetwork({
     session.publishMessage(message);
   }, [session]);
 
-  const subscribeTo = useCallback(async (peerBuyinAddress, peerAnnouncePubKey, callback) => {
+  const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback) => {
     const keys = blsKeys ?? await generateKeys(tableDetails);
     const generatedPublicKey = `0x${keys.publicKey}`;
     if (
@@ -164,23 +173,25 @@ export function useNetwork({
       );
     }
     session.update({
-      buyinAddress: keys.buyinAddress,
+      playerAddress,
+      operator: keys.operator,
       tableId,
       lobbyId,
       publicKey: keys.publicKey,
       privateKey: keys.privateKey,
-      buyinPrivateKey: keys.buyinPrivateKey,
+      operatorPrivateKey: keys.operatorPrivateKey,
       players,
       isTableFull,
       tableCapacity,
     });
-    await session.subscribeTo(peerBuyinAddress, peerAnnouncePubKey, callback);
+    await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback);
   }, [
     blsKeys,
     generateKeys,
     isTableFull,
     lobbyId,
     mySeatAnnouncePublicKey,
+    playerAddress,
     playersKey,
     tableCapacity,
     tableDetails,

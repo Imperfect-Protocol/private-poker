@@ -88,12 +88,12 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     onSeat: handleSeatEvent,
   });
   tableRef.current = table;
-  const currentBuyinAddress = table.currentSeat?.buyinAddress ?? null;
+  const currentPlayerAddress = table.currentSeat?.playerAddress ?? null;
 
   useEffect(() => {
     setShowBuyInDialog(true);
     setBuyInDialogReady(false);
-  }, [lobbyId, tableId, currentBuyinAddress]);
+  }, [lobbyId, tableId, currentPlayerAddress]);
 
   useEffect(() => {
     setBuyInDialogReady(false);

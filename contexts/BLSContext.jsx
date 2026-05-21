@@ -8,8 +8,8 @@ import * as bls from '@noble/bls12-381';
 import { BLS_TABLE_SESSION_DOMAIN, BLS_TABLE_SESSION_TYPES } from '@/lib/constants';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
-const deriveBuyinPrivateKey = (signature) => (
-    keccak256(toBytes(`${signature}:PrivatePoker:BuyinAddress`))
+const deriveOperatorPrivateKey = (signature) => (
+    keccak256(toBytes(`${signature}:PrivatePoker:Operator`))
 );
 
 export function makeTableBlsSessionKey(tableDetails, walletAddress) {
@@ -78,20 +78,20 @@ export function BLSProvider({ children }) {
             const seedHex = keccak256(signature);
             const privateKeyBytes = toBytes(seedHex);
             const publicKeyBytes = bls.getPublicKey(privateKeyBytes);
-            const buyinPrivateKey = deriveBuyinPrivateKey(signature);
-            const buyinAccount = privateKeyToAccount(buyinPrivateKey);
-            console.log('buyinAddress', {
+            const operatorPrivateKey = deriveOperatorPrivateKey(signature);
+            const operatorAccount = privateKeyToAccount(operatorPrivateKey);
+            console.log('operator', {
                 tableId: tableDetails.tableId?.toString(),
                 lobbyId: tableDetails.lobbyId?.toString(),
-                address: buyinAccount.address,
+                address: operatorAccount.address,
             });
 
             const keys = {
                 privateKey: toHex(privateKeyBytes).slice(2),
                 publicKey: toHex(publicKeyBytes).slice(2),
-                buyinPrivateKey,
-                buyinPublicKey: buyinAccount.publicKey,
-                buyinAddress: buyinAccount.address,
+                operatorPrivateKey,
+                operatorPublicKey: operatorAccount.publicKey,
+                operator: operatorAccount.address,
                 sessionKey,
             };
 

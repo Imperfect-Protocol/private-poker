@@ -6,7 +6,7 @@ const formatAddress = (address) => {
 export default function Name({ player, isEmptySeat }) {
   return (
     <p className={`text-[10px] font-bold truncate uppercase tracking-tighter ${isEmptySeat ? 'text-slate-600' : 'text-slate-300'}`}>
-      {isEmptySeat ? 'Open Seat' : formatAddress(player.buyinAddress)}
+      {isEmptySeat ? 'Open Seat' : formatAddress(player.playerAddress)}
     </p>
   );
 }

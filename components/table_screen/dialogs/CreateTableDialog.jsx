@@ -133,8 +133,8 @@ export default function CreateTableDialog({
         name: cleanName,
         buyin: formData.buyin,
         maxSeats: formData.maxPlayers,
-        players: keys?.buyinAddress
-          ? [{ buyinAddress: keys.buyinAddress, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
+        players: keys?.operator
+          ? [{ playerAddress: keys.playerAddress, operator: keys.operator, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
           : [],
         current_hand: { min_bet: 10, max_bet: 100, bet_step: 10, community_cards: "" },
       };

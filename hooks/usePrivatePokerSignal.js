@@ -4,7 +4,7 @@ import { isAddress, parseAbi } from 'viem';
 import { SIGNAL_CONTRACT_ADDRESS } from '@/lib/chain';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
-import { useBuyinAddress } from '@/hooks/useBuyinAddress';
+import { useOperatorAddress } from '@/hooks/useOperatorAddress';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
 
 const SIGNAL_ABI = parseAbi([
@@ -17,9 +17,9 @@ const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
 export function usePrivatePokerSignal() {
     const { address } = useConnection();
     const { mutateAsync, isPending } = useWriteContract();
-    const { writeContractFromBuyinAddress } = useBuyinAddress();
+    const { writeContractFromOperator } = useOperatorAddress();
 
-    const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes, buyinSigner = undefined) => {
+    const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes, operatorSigner = undefined) => {
         if (!hasSignalContract) {
             throw new Error("PrivatePokerSignal contract address is not configured.");
         }
@@ -42,9 +42,9 @@ export function usePrivatePokerSignal() {
             encryptedData,
         ];
 
-        if (buyinSigner?.buyinPrivateKey) {
-            return writeContractFromBuyinAddress({
-                buyinPrivateKey: buyinSigner.buyinPrivateKey,
+        if (operatorSigner?.operatorPrivateKey) {
+            return writeContractFromOperator({
+                operatorPrivateKey: operatorSigner.operatorPrivateKey,
                 contract: SIGNAL_CONTRACT_ADDRESS,
                 abi: SIGNAL_ABI,
                 functionName: 'sendSignal',
@@ -69,12 +69,12 @@ export function usePrivatePokerSignal() {
             args,
             ...overrides,
         });
-    }, [address, mutateAsync, writeContractFromBuyinAddress]);
+    }, [address, mutateAsync, writeContractFromOperator]);
 
     return { sendSignal, isSendingSignal: isPending };
 }
 
-export function useListenForSignals(myBuyinAddress, onSignalReceived) {
+export function useListenForSignals(myPlayerAddress, onSignalReceived) {
     const onSignalReceivedRef = useRef(onSignalReceived);
     const seenLogsRef = useRef(new Set());
 
@@ -86,13 +86,13 @@ export function useListenForSignals(myBuyinAddress, onSignalReceived) {
         address: SIGNAL_CONTRACT_ADDRESS,
         abi: SIGNAL_ABI,
         eventName: 'HandshakeSignal',
-        enabled: hasSignalContract && Boolean(myBuyinAddress),
+        enabled: hasSignalContract && Boolean(myPlayerAddress),
         onLogs: (logs) => {
             logs.forEach((log) => {
                 const { sender, lobby_id, table_id, recipients, encrypted_data } = log.args;
 
                 const isRecipient = recipients?.some(
-                    (recipient) => recipient?.toLowerCase() === myBuyinAddress?.toLowerCase(),
+                    (recipient) => recipient?.toLowerCase() === myPlayerAddress?.toLowerCase(),
                 );
 
                 if (!isRecipient) {
@@ -119,7 +119,7 @@ export function useListenForSignals(myBuyinAddress, onSignalReceived) {
                 }
 
                 recipients?.forEach((recipient, index) => {
-                    if (recipient?.toLowerCase() !== myBuyinAddress?.toLowerCase()) return;
+                    if (recipient?.toLowerCase() !== myPlayerAddress?.toLowerCase()) return;
 
                     const logId = `${log.transactionHash}:${log.logIndex}:${index}`;
                     if (seenLogsRef.current.has(logId)) return;

@@ -26,10 +26,10 @@ function getSeatingArrangement(numPlayers) {
   }
 }
 
-function getSeatedPlayers(tableData, currentBuyinAddress) {
+function getSeatedPlayers(tableData, currentPlayerAddress) {
   const players = tableData?.players || [];
   const userIndex = players.findIndex(
-    (player) => player.buyinAddress?.toLowerCase() === currentBuyinAddress?.toLowerCase(),
+    (player) => player.playerAddress?.toLowerCase() === currentPlayerAddress?.toLowerCase(),
   );
   const rotatedPlayers = userIndex >= 0
     ? [
@@ -52,21 +52,21 @@ function getSeatedPlayers(tableData, currentBuyinAddress) {
 
 export default function TablePlayers({
   tableData,
-  currentBuyinAddress,
+  currentPlayerAddress,
 }) {
-  const seatedPlayers = getSeatedPlayers(tableData, currentBuyinAddress);
+  const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
   const heroCards = parseCards(tableData?.current_hand?.player_cards);
 
   return seatedPlayers.map((player, index) => {
     const isEmptySeat = Boolean(player.isEmptySeat);
-    const isMe = !isEmptySeat && player.buyinAddress?.toLowerCase() === currentBuyinAddress?.toLowerCase();
-    const originalIndex = isEmptySeat ? -1 : tableData.players.findIndex((candidate) => candidate.buyinAddress === player.buyinAddress);
+    const isMe = !isEmptySeat && player.playerAddress?.toLowerCase() === currentPlayerAddress?.toLowerCase();
+    const originalIndex = isEmptySeat ? -1 : tableData.players.findIndex((candidate) => candidate.playerAddress === player.playerAddress);
     const isTheirTurn = !isEmptySeat && tableData.current_hand?.current_player === originalIndex.toString();
 
     return (
       <Player
-        key={isEmptySeat ? player.seatId : player.buyinAddress}
+        key={isEmptySeat ? player.seatId : player.playerAddress}
         player={player}
         positionClass={clockPositions[activeSeats[index]]}
         isMe={isMe}
