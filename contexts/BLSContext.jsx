@@ -3,10 +3,15 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useConnection, useSignTypedData } from 'wagmi';
 import { keccak256, toBytes, toHex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import * as bls from '@noble/bls12-381';
 import { BLS_TABLE_SESSION_DOMAIN, BLS_TABLE_SESSION_TYPES } from '@/lib/constants';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
+const deriveBuyinPrivateKey = (signature) => (
+    keccak256(toBytes(`${signature}:PrivatePoker:BuyinAddress`))
+);
+
 export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     if (!tableDetails?.lobbyId || !tableDetails?.tableId || !walletAddress) return null;
     return [
@@ -73,10 +78,20 @@ export function BLSProvider({ children }) {
             const seedHex = keccak256(signature);
             const privateKeyBytes = toBytes(seedHex);
             const publicKeyBytes = bls.getPublicKey(privateKeyBytes);
+            const buyinPrivateKey = deriveBuyinPrivateKey(signature);
+            const buyinAccount = privateKeyToAccount(buyinPrivateKey);
+            console.log('buyinAddress', {
+                tableId: tableDetails.tableId?.toString(),
+                lobbyId: tableDetails.lobbyId?.toString(),
+                address: buyinAccount.address,
+            });
 
             const keys = {
                 privateKey: toHex(privateKeyBytes).slice(2),
                 publicKey: toHex(publicKeyBytes).slice(2),
+                buyinPrivateKey,
+                buyinPublicKey: buyinAccount.publicKey,
+                buyinAddress: buyinAccount.address,
                 sessionKey,
             };
 

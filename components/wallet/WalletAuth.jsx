@@ -2,27 +2,61 @@
 
 import { useState, useEffect } from 'react'
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
-import { useDisconnect, useConnection, useBalance } from 'wagmi'
-import { formatUnits } from 'viem';
-import { CHAIN_ID } from '@/lib/chain';
+import { useDisconnect, useConnection } from 'wagmi'
+import { parseAbi } from 'viem';
+import { CHIPS_CONTRACT_ADDRESS } from '@/lib/chain';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 
+const CHIPS_ABI = parseAbi([
+  "function balanceOf(address account) view returns (uint256)",
+]);
 
 export default function WalletAuth() {
   const [mounted, setMounted] = useState(false)
+  const [chipsBalance, setChipsBalance] = useState(null)
   const { open } = useAppKit()
   const { disconnect } = useDisconnect()
   const { isConnected } = useAppKitAccount()
 
   const { address } = useConnection();
 
-  const { data: balance } = useBalance({
-    address: address,
-    chainId: CHAIN_ID,
-  });
-
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadChipsBalance = async () => {
+      if (!address) {
+        setChipsBalance(null);
+        return;
+      }
+
+      try {
+        const balance = await publicPokerClient.readContract({
+          address: CHIPS_CONTRACT_ADDRESS,
+          abi: CHIPS_ABI,
+          functionName: 'balanceOf',
+          args: [address],
+        });
+        if (!cancelled) setChipsBalance(balance);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load CHIPS balance:', error);
+          setChipsBalance(null);
+        }
+      }
+    };
+
+    loadChipsBalance();
+    const timer = setInterval(loadChipsBalance, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [address]);
 
   // Hydration fix: shows a neutral placeholder during server/client hand-off
   if (!mounted) return <div className="w-48 h-9 bg-slate-900/50 rounded border border-slate-800 animate-pulse" />
@@ -32,7 +66,7 @@ export default function WalletAuth() {
       <div className="flex items-center bg-slate-900 border border-teal-500/20 rounded px-1 py-1">
         <div className="flex items-center gap-3 px-3 py-1 font-mono font-bold text-[0.8em]">
           <span className="text-teal-400">
-            {balance && `${formatUnits(balance.value, balance.decimals)} ${balance.symbol}`}
+            {chipsBalance === null ? '... CHIPS' : `${chipsBalance.toString()} CHIPS`}
           </span>
           <span className="text-slate-700">|</span>
           <span className="text-teal-500">

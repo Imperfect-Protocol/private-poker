@@ -9,7 +9,7 @@ import Title from '@/components/table_screen/Title';
 
 export default function TableScreen({
   tableData,
-  currentUserAddress,
+  currentBuyinAddress,
   showActionBar = false,
   actionBarProps = {},
   debugConsole = null,
@@ -43,7 +43,7 @@ export default function TableScreen({
 
           <TablePlayers
             tableData={tableData}
-            currentUserAddress={currentUserAddress}
+            currentBuyinAddress={currentBuyinAddress}
           />
         </div>
 

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useConnection } from 'wagmi';
 import CreateTableDialog from '@/components/table_screen/dialogs/CreateTableDialog';
 import TableScreen from '@/components/table_screen/Component';
 
@@ -19,7 +18,6 @@ function makePreviewTable(name, tableData = null) {
 export default function CreateTableScreen() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { address } = useConnection();
 
   const lobbyId = searchParams.get('lobbyId') || "1";
   const [previewName, setPreviewName] = useState("New Player Table");
@@ -41,12 +39,10 @@ export default function CreateTableScreen() {
   return (
     <TableScreen
       tableData={tableData}
-      currentUserAddress={address}
     >
       {!hasJoinedTable && isCreatingTable && (
         <CreateTableDialog
           lobbyId={lobbyId}
-          currentUserAddress={address}
           onPreviewNameChange={setPreviewName}
           onCreated={handleCreated}
           onCancel={() => window.close()}

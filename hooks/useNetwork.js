@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnection } from 'wagmi';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { PokerRtcSession } from '@/lib/PokerRtcSession';
@@ -9,7 +8,7 @@ const normalizeAddress = (value) => value?.toLowerCase() ?? '';
 function makePlayersKey(players = []) {
   return players
     .map((player) => [
-      normalizeAddress(player?.address),
+      normalizeAddress(player?.buyinAddress),
       player?.annoncePublicKey ?? '',
     ].join('/'))
     .join('|');
@@ -19,14 +18,14 @@ function makeSeatsKey(seats = []) {
   return seats
     .map((seat) => [
       seat?.seatNo ?? '',
-      normalizeAddress(seat?.address),
+      normalizeAddress(seat?.buyinAddress),
       seat?.announcePublicKey ?? '',
     ].join('/'))
     .join('|');
 }
 
 function makeSessionConfigKey({
-  address,
+  buyinAddress,
   tableId,
   lobbyId,
   publicKey,
@@ -36,11 +35,12 @@ function makeSessionConfigKey({
   tableCapacity,
 }) {
   return [
-    normalizeAddress(address),
+    normalizeAddress(buyinAddress),
     tableId ?? '',
     lobbyId ?? '',
     publicKey ?? '',
     privateKey ? 'private-key-ready' : '',
+    buyinAddress ?? '',
     isTableFull ? 'full' : 'waiting',
     tableCapacity ?? 0,
     playersKey,
@@ -56,26 +56,27 @@ export function useNetwork({
   isTableFull = false,
   tableCapacity = 0,
 } = {}) {
-  const { address } = useConnection();
   const { sendSignal } = usePrivatePokerSignal();
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
+  const buyinPrivateKey = blsKeys?.buyinPrivateKey;
+  const buyinAddress = blsKeys?.buyinAddress;
   const loggedUpdateKeysRef = useRef(new Set());
   const seatsKey = makeSeatsKey(seats);
   const players = useMemo(
     () => seats
-      .filter((seat) => seat?.address)
+      .filter((seat) => seat?.buyinAddress)
       .map((seat) => ({
         seatNo: seat.seatNo,
-        address: seat.address,
+        buyinAddress: seat.buyinAddress,
         annoncePublicKey: seat.announcePublicKey,
       })),
     [seatsKey],
   );
   const playersKey = makePlayersKey(players);
   const mySeatAnnouncePublicKey = players.find(
-    (player) => normalizeAddress(player.address) === normalizeAddress(address),
+    (player) => normalizeAddress(player.buyinAddress) === normalizeAddress(buyinAddress),
   )?.annoncePublicKey;
   const sendSignalRef = useRef(sendSignal);
   const onActivityRef = useRef(onActivity);
@@ -93,7 +94,7 @@ export function useNetwork({
 
   useEffect(() => {
     const sessionConfigKey = makeSessionConfigKey({
-      address,
+      buyinAddress,
       tableId,
       lobbyId,
       publicKey,
@@ -114,27 +115,29 @@ export function useNetwork({
       onStateChange: () => {},
     });
     session.update({
-      address,
+      buyinAddress,
       tableId,
       lobbyId,
       publicKey,
       privateKey,
+      buyinPrivateKey,
       players,
       isTableFull,
       tableCapacity,
     });
   }, [
-    address,
     isTableFull,
     lobbyId,
     playersKey,
     privateKey,
     publicKey,
+    buyinPrivateKey,
+    buyinAddress,
     tableCapacity,
     tableId,
   ]);
 
-  useListenForSignals(address, async (signalData) => {
+  useListenForSignals(buyinAddress, async (signalData) => {
     console.log('handleSignal', signalData);
     await session.handleSignal(signalData);
   });
@@ -149,7 +152,7 @@ export function useNetwork({
     session.publishMessage(message);
   }, [session]);
 
-  const subscribeTo = useCallback(async (playerAddress, playerAnnouncePubKey, callback) => {
+  const subscribeTo = useCallback(async (peerBuyinAddress, peerAnnouncePubKey, callback) => {
     const keys = blsKeys ?? await generateKeys(tableDetails);
     const generatedPublicKey = `0x${keys.publicKey}`;
     if (
@@ -161,18 +164,18 @@ export function useNetwork({
       );
     }
     session.update({
-      address,
+      buyinAddress: keys.buyinAddress,
       tableId,
       lobbyId,
       publicKey: keys.publicKey,
       privateKey: keys.privateKey,
+      buyinPrivateKey: keys.buyinPrivateKey,
       players,
       isTableFull,
       tableCapacity,
     });
-    await session.subscribeTo(playerAddress, playerAnnouncePubKey, callback);
+    await session.subscribeTo(peerBuyinAddress, peerAnnouncePubKey, callback);
   }, [
-    address,
     blsKeys,
     generateKeys,
     isTableFull,

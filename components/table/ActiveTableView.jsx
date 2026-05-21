@@ -8,7 +8,7 @@ export default function ActiveTableView({ table, debugConsole, children }) {
   return (
     <TableScreen
       tableData={table.tableData}
-      currentUserAddress={currentSeat.address}
+      currentBuyinAddress={currentSeat.buyinAddress}
       debugConsole={debugConsole}
       showActionBar={table.tableData !== undefined}
       actionBarProps={{}}

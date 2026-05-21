@@ -88,23 +88,23 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     onSeat: handleSeatEvent,
   });
   tableRef.current = table;
-  const currentPlayerAddress = table.currentSeat?.address ?? null;
+  const currentBuyinAddress = table.currentSeat?.buyinAddress ?? null;
 
   useEffect(() => {
     setShowBuyInDialog(true);
     setBuyInDialogReady(false);
-  }, [lobbyId, tableId, currentPlayerAddress]);
+  }, [lobbyId, tableId, currentBuyinAddress]);
 
   useEffect(() => {
     setBuyInDialogReady(false);
-    if (!table.tableData || !currentPlayerAddress || table.isSeated !== false || !showBuyInDialog) return;
+    if (!table.tableData || table.isSeated !== false || !showBuyInDialog) return;
 
     const timer = setTimeout(() => {
       setBuyInDialogReady(true);
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [showBuyInDialog, table.isSeated, currentPlayerAddress, table.tableData]);
+  }, [showBuyInDialog, table.isSeated, table.tableData]);
 
   if (table.isLoading || !table.tableData) {
     return (

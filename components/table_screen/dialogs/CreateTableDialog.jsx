@@ -8,7 +8,6 @@ import { STAKES_OPTIONS } from '@/lib/stakes';
 
 export default function CreateTableDialog({
   lobbyId,
-  currentUserAddress,
   onPreviewNameChange,
   onCreated,
   onCancel,
@@ -118,7 +117,7 @@ export default function CreateTableDialog({
     try {
       setIsPending(true);
       const tableId = Date.now();
-      const { publicKeyBytes } = await createTableWithBuyIn({
+      const { publicKeyBytes, keys } = await createTableWithBuyIn({
         lobbyId: formData.lobbyId,
         lobbyName: lobbyInfo.name,
         tableId,
@@ -134,8 +133,8 @@ export default function CreateTableDialog({
         name: cleanName,
         buyin: formData.buyin,
         maxSeats: formData.maxPlayers,
-        players: currentUserAddress
-          ? [{ address: currentUserAddress, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
+        players: keys?.buyinAddress
+          ? [{ buyinAddress: keys.buyinAddress, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
           : [],
         current_hand: { min_bet: 10, max_bet: 100, bet_step: 10, community_cards: "" },
       };

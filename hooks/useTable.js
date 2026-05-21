@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnection } from 'wagmi';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useNetwork } from '@/hooks/useNetwork';
 import { useNetworkTopology } from '@/hooks/useNetworkTopology';
+import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { CHAIN_POLLING_INTERVAL } from '@/lib/chain';
 
 const mapTableDetail = (detail) => ({
@@ -21,7 +21,7 @@ const buildSeats = (tableData) => {
     const player = tableData?.players?.[index];
     return {
       seatNo: index,
-      address: player?.address ?? null,
+      buyinAddress: player?.buyinAddress ?? null,
       announcePublicKey: player?.annoncePublicKey ?? null,
     };
   });
@@ -32,7 +32,7 @@ const normalizeAddress = (value) => value?.toLowerCase() ?? '';
 const makeSeatsKey = (seats) => seats
   .map((seat) => [
     seat.seatNo,
-    normalizeAddress(seat.address),
+    normalizeAddress(seat.buyinAddress),
     seat.announcePublicKey ?? '',
   ].join('/'))
   .join('|');
@@ -45,7 +45,6 @@ export function useTable({
   onActivity,
   onSeat: onSeatEvent,
 } = {}) {
-  const { address } = useConnection();
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
   const [liveTableData, setLiveTableData] = useState(initialTableData);
   const [isLoading, setIsLoading] = useState(!initialTableData);
@@ -70,6 +69,8 @@ export function useTable({
     blinds: liveTableData?.blinds,
     stakesLabel: liveTableData?.stakes,
   }), [activeTableId, lobbyId, liveTableData?.blinds, liveTableData?.buyin, liveTableData?.stakes, tableName]);
+  const { blsKeys } = useRequireBLS(tableSessionDetails);
+  const buyinAddress = blsKeys?.buyinAddress ?? null;
 
   const subscribedPrecedingPeerKeyRef = useRef(null);
 
@@ -90,30 +91,30 @@ export function useTable({
   const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
   const mySeatNo = useMemo(() => (
-    seats.find((seat) => normalizeAddress(seat.address) === normalizeAddress(address))?.seatNo ?? null
-  ), [address, seatsKey]);
+    seats.find((seat) => normalizeAddress(seat.buyinAddress) === normalizeAddress(buyinAddress))?.seatNo ?? null
+  ), [buyinAddress, seatsKey]);
 
   const previousSeatNo = getPreviousSeat(mySeatNo);
   const previousSeat = previousSeatNo === null ? null : seats[previousSeatNo];
   const subscriptionKey = [
-    normalizeAddress(address),
+    normalizeAddress(buyinAddress),
     lobbyId ?? '',
     activeTableId ?? '',
     previousSeatNo ?? '',
-    normalizeAddress(previousSeat?.address),
+    normalizeAddress(previousSeat?.buyinAddress),
     previousSeat?.announcePublicKey ?? '',
   ].join('::');
 
   useEffect(() => {
-    if (!isTableFull || !previousSeat?.address) return;
+    if (!isTableFull || !previousSeat?.buyinAddress) return;
     if (subscribedPrecedingPeerKeyRef.current === subscriptionKey) return;
 
     subscribedPrecedingPeerKeyRef.current = subscriptionKey;
-    const { address, announcePublicKey } = previousSeat;
-    subscribeTo(address, announcePublicKey, (seatNo, event) => {
+    const { buyinAddress, announcePublicKey } = previousSeat;
+    subscribeTo(buyinAddress, announcePublicKey, (seatNo, event) => {
       onSeat(seatNo, {
         kind: 'network',
-        address,
+        buyinAddress,
         event,
       });
     });
@@ -141,8 +142,8 @@ export function useTable({
           },
         }));
 
-        if (address) {
-          const userTables = await getPlayerTables(address);
+        if (buyinAddress) {
+          const userTables = await getPlayerTables(buyinAddress);
           if (cancelled) return;
           setIsSeated(userTables.includes(tableId.toString()));
         } else {
@@ -172,24 +173,24 @@ export function useTable({
       cancelled = true;
       clearTimeout(pollTimer);
     };
-  }, [address, lobbyId, refreshTrigger, tableId]);
+  }, [buyinAddress, lobbyId, refreshTrigger, tableId]);
 
   useEffect(() => {
     seats.forEach((seat) => {
-      if (!seat.address) return;
+      if (!seat.buyinAddress) return;
       onSeat(seat.seatNo, {
         kind: 'blockchain',
-        address: seat.address,
+        buyinAddress: seat.buyinAddress,
         announcePublicKey: seat.announcePublicKey,
       });
     });
   }, [seatsKey]);
 
   const currentSeat = useMemo(() => ({
-    address,
+    buyinAddress,
     seatNo: mySeatNo,
     isSeated: isSeated === true,
-  }), [address, isSeated, mySeatNo]);
+  }), [buyinAddress, isSeated, mySeatNo]);
 
   const result = [activeTableId, tableName, lobbyId, liveTableData?.gameType ?? 1, seats, onSeat];
   return Object.assign(result, {
