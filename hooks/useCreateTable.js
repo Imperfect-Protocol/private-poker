@@ -3,6 +3,7 @@ import { useConnection } from 'wagmi';
 import { usePokerChips } from '@/hooks/usePokerChips';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
+import { toChipUnits } from '@/lib/constants';
 
 export function useCreateTable() {
   const { address } = useConnection();
@@ -36,7 +37,7 @@ export function useCreateTable() {
     });
     const publicKeyBytes = `0x${keys.publicKey}`;
     await ensureBuyInAllowance(buyIn);
-    await createTable(lobbyId, tableId, tableName, buyIn, numPlayers, address, keys.operator, publicKeyBytes);
+    await createTable(lobbyId, tableId, tableName, toChipUnits(buyIn), numPlayers, address, keys.operator, publicKeyBytes);
     return { publicKeyBytes, keys: { ...keys, playerAddress: address } };
   }, [address, createTable, ensureBuyInAllowance, generateKeys]);
 

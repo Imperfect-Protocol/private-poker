@@ -1,6 +1,7 @@
 import { useConnection, useWriteContract } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
 import { CHIPS_CONTRACT_ADDRESS, LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
+import { toChipUnits } from '@/lib/constants';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 
@@ -25,7 +26,7 @@ export function usePokerChips() {
       throw new Error("Connect wallet before buying in.");
     }
 
-    const amount = BigInt(buyIn);
+    const amount = toChipUnits(buyIn);
     if (amount === 0n) return;
 
     const [balance, allowance] = await Promise.all([

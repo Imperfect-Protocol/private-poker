@@ -3,6 +3,7 @@ import { useConnection } from 'wagmi';
 import { usePokerChips } from '@/hooks/usePokerChips';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
+import { toChipUnits } from '@/lib/constants';
 
 export function useJoinTable() {
   const { address } = useConnection();
@@ -28,7 +29,7 @@ export function useJoinTable() {
     });
     const publicKeyBytes = `0x${keys.publicKey}`;
     await ensureBuyInAllowance(buyIn);
-    await joinTable(lobbyId, tableId, buyIn, address, keys.operator, publicKeyBytes);
+    await joinTable(lobbyId, tableId, toChipUnits(buyIn), address, keys.operator, publicKeyBytes);
     return { publicKeyBytes, keys };
   }, [address, ensureBuyInAllowance, generateKeys, joinTable]);
 

@@ -5,6 +5,7 @@ import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
 import { useDisconnect, useConnection } from 'wagmi'
 import { parseAbi } from 'viem';
 import { CHIPS_CONTRACT_ADDRESS } from '@/lib/chain';
+import { fromChipUnits } from '@/lib/constants';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 
 const CHIPS_ABI = parseAbi([
@@ -66,7 +67,7 @@ export default function WalletAuth() {
       <div className="flex items-center bg-slate-900 border border-teal-500/20 rounded px-1 py-1">
         <div className="flex items-center gap-3 px-3 py-1 font-mono font-bold text-[0.8em]">
           <span className="text-teal-400">
-            {chipsBalance === null ? '... CHIPS' : `${chipsBalance.toString()} CHIPS`}
+            {chipsBalance === null ? '... CHIPS' : `${fromChipUnits(chipsBalance)} CHIPS`}
           </span>
           <span className="text-slate-700">|</span>
           <span className="text-teal-500">

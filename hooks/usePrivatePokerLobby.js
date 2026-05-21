@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useConnection, useWriteContract } from 'wagmi';
 import { decodeAbiParameters, parseAbi } from 'viem';
 import { LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
+import { fromChipUnits } from '@/lib/constants';
 import { getBufferedGasOverrides } from '@/lib/gas';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
@@ -105,9 +106,9 @@ export function usePrivatePokerLobby() {
         return {
             id: table.tableId.toString(),
             flags: Number(table.tableFlags),
-            buyIn: table.tableBuyin.toString(),
+            buyIn: fromChipUnits(table.tableBuyin),
             playerCount: Number(table.tablePlayerCount),
-            totalBuyIn: table.tableTotalBuyin.toString(),
+            totalBuyIn: fromChipUnits(table.tableTotalBuyin),
             name: table.tableName,
         };
     };
@@ -214,15 +215,15 @@ export function usePrivatePokerLobby() {
             info: {
                 id: detail.info.tableId.toString(),
                 flags: Number(detail.info.tableFlags),
-                buyIn: detail.info.tableBuyin.toString(),
+                buyIn: fromChipUnits(detail.info.tableBuyin),
                 playerCount: Number(detail.info.tablePlayerCount),
-                totalBuyIn: detail.info.tableTotalBuyin.toString(),
+                totalBuyIn: fromChipUnits(detail.info.tableTotalBuyin),
                 name: detail.info.tableName,
             },
             players: detail.players.map(p => ({
                 playerAddress: p.playerAddress,
                 operator: p.operator,
-                chips: p.playerChips.toString(),
+                chips: fromChipUnits(p.playerChips),
                 annoncePublicKey: p.playerAnnoncePublicKey ?? null,
             }))
         };

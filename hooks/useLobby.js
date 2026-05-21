@@ -6,7 +6,7 @@ import {
   useListenForNewTables,
   usePrivatePokerLobby,
 } from '@/hooks/usePrivatePokerLobby';
-import { getGameTypeName, getLobbyStatus } from '@/lib/constants';
+import { fromChipUnits, getGameTypeName, getLobbyStatus } from '@/lib/constants';
 import { getBlindsForBuyin } from '@/lib/stakes';
 
 export function useLobby(lobbyId = undefined) {
@@ -67,7 +67,7 @@ export function useLobby(lobbyId = undefined) {
               name: lobbyData.name,
               table_count: lobbyData.tableCount.toString(),
               total_players: lobbyData.playerCount.toString(),
-              total_buyin: `$${lobbyData.totalVolume}`,
+              total_buyin: `$${fromChipUnits(lobbyData.totalVolume)}`,
             });
           }
 

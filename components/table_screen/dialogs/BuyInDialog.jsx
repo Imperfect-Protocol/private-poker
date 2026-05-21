@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from 'react';
-import { formatUnits } from 'viem';
 import { useJoinTable } from '@/hooks/useJoinTable';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 
@@ -55,7 +54,7 @@ export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
         <div className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-lg">
           <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">Required Buy-in</span>
           <span className="text-teal-400 font-mono font-bold text-lg">
-            {formatUnits(tableData.buyin, 18)} ETH
+            {tableData.buyin} CHIPS
           </span>
         </div>
 
