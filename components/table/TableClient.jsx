@@ -4,6 +4,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTable } from '@/hooks/useTable';
 import ActiveTableView from '@/components/table/ActiveTableView';
 import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
+import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
+import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
+import { OPERATOR_GAS_MAX_TOPUP } from '@/lib/constants';
 
 const readCreatedTableSnapshot = (tableId) => {
   if (typeof window === 'undefined') return null;
@@ -34,6 +37,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [input, setInput] = useState('');
   const [showBuyInDialog, setShowBuyInDialog] = useState(true);
   const [buyInDialogReady, setBuyInDialogReady] = useState(false);
+  const [joinRequest, setJoinRequest] = useState(null);
+  const [networkEnabled, setNetworkEnabled] = useState(false);
+  const [showReJoinDialog, setShowReJoinDialog] = useState(false);
+  const [reJoinDismissed, setReJoinDismissed] = useState(false);
+  const topUpFactorRef = useRef(10);
 
   const addDebugMessage = useCallback((message) => {
     setMessages((prev) => [...prev, message].slice(-160));
@@ -79,6 +87,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     }
   }, [addDebugMessage, handleRtcMessage]);
 
+  const handleOperatorTopUp = useCallback(async ({ requiredAmount }) => {
+    const requestedAmount = BigInt(requiredAmount) * BigInt(topUpFactorRef.current);
+    return requestedAmount < OPERATOR_GAS_MAX_TOPUP ? requestedAmount : OPERATOR_GAS_MAX_TOPUP;
+  }, []);
+
   const table = useTable({
     tableId,
     lobbyId,
@@ -86,6 +99,8 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     initialIsSeated: bootIsSeated,
     onActivity: handleRtcActivity,
     onSeat: handleSeatEvent,
+    networkEnabled,
+    onOperatorTopUp: handleOperatorTopUp,
   });
   tableRef.current = table;
   const currentPlayerAddress = table.currentSeat?.playerAddress ?? null;
@@ -93,6 +108,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   useEffect(() => {
     setShowBuyInDialog(true);
     setBuyInDialogReady(false);
+    setJoinRequest(null);
+    setNetworkEnabled(false);
+    setShowReJoinDialog(false);
+    setReJoinDismissed(false);
   }, [lobbyId, tableId, currentPlayerAddress]);
 
   useEffect(() => {
@@ -105,6 +124,19 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
     return () => clearTimeout(timer);
   }, [showBuyInDialog, table.isSeated, table.tableData]);
+
+  useEffect(() => {
+    if (!table.hasJoinedTable || joinRequest || reJoinDismissed) return;
+    setShowReJoinDialog(true);
+  }, [joinRequest, reJoinDismissed, table.hasJoinedTable]);
+
+  useEffect(() => {
+    if (!table.hasJoinedTable || joinRequest || showReJoinDialog) return;
+    if (table.networkSnapshot?.status === 'connected') return;
+
+    setReJoinDismissed(false);
+    setShowReJoinDialog(true);
+  }, [joinRequest, showReJoinDialog, table.hasJoinedTable, table.networkSnapshot?.status]);
 
   if (table.isLoading || !table.tableData) {
     return (
@@ -165,10 +197,37 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
           tableData={table.tableData}
           lobbyId={lobbyId}
           onClose={() => setShowBuyInDialog(false)}
-          onJoined={() => {
-            table.setIsSeated(true);
+          onJoinRequest={(request) => {
             setShowBuyInDialog(false);
+            setJoinRequest(request);
+          }}
+        />
+      )}
+
+      {joinRequest && (
+        <JoinTableFlowDialog
+          request={joinRequest}
+          onComplete={() => {
+            table.setIsSeated(true);
+            setJoinRequest(null);
+            setReJoinDismissed(false);
+            setShowReJoinDialog(true);
             table.refresh();
+          }}
+        />
+      )}
+
+      {table.hasJoinedTable && showReJoinDialog && !joinRequest && (
+        <ReJoinTableFlowDialog
+          table={table}
+          networkSnapshot={table.networkSnapshot}
+          onTopUpFactorChange={(factor) => {
+            topUpFactorRef.current = factor;
+          }}
+          onEnableNetwork={() => setNetworkEnabled(true)}
+          onReady={() => {
+            setShowReJoinDialog(false);
+            setReJoinDismissed(true);
           }}
         />
       )}

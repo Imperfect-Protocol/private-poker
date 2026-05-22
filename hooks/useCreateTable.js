@@ -25,7 +25,9 @@ export function useCreateTable() {
     blinds,
     stakesLabel,
     numPlayers,
+    onStep,
   }) => {
+    onStep?.('signature', 'active');
     const keys = await generateKeys({
       lobbyId,
       lobbyName,
@@ -35,9 +37,14 @@ export function useCreateTable() {
       blinds,
       stakesLabel,
     });
+    onStep?.('signature', 'complete');
     const publicKeyBytes = `0x${keys.publicKey}`;
+    onStep?.('approval', 'active');
     await ensureBuyInAllowance(buyIn);
+    onStep?.('approval', 'complete');
+    onStep?.('transfer', 'active');
     await createTable(lobbyId, tableId, tableName, toChipUnits(buyIn), numPlayers, address, keys.operator, publicKeyBytes);
+    onStep?.('transfer', 'complete');
     return { publicKeyBytes, keys: { ...keys, playerAddress: address } };
   }, [address, createTable, ensureBuyInAllowance, generateKeys]);
 

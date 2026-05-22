@@ -45,25 +45,34 @@ async function getOperatorTopUpGasOverrides({ account, operator, amount }) {
   }
 }
 
-export function useOperatorAddress() {
+const defaultTopUpAmount = (requiredAmount) => {
+  const requestedAmount = requiredAmount * OPERATOR_GAS_TOPUP_FACTOR;
+  return requestedAmount < OPERATOR_GAS_MAX_TOPUP ? requestedAmount : OPERATOR_GAS_MAX_TOPUP;
+};
+
+export function useOperatorAddress({ onOperatorTopUp } = {}) {
   const { address } = useConnection();
   const { sendTransactionAsync } = useSendTransaction();
 
-  const topUpGasToken = useCallback(async (operator, amount) => {
+  const topUpGasToken = useCallback(async (operator, requiredAmount) => {
+    const topUpAmount = await onOperatorTopUp?.({ operator, requiredAmount })
+      ?? defaultTopUpAmount(requiredAmount);
+
     const gasOverrides = await getOperatorTopUpGasOverrides({
       account: address,
       operator,
-      amount,
+      amount: topUpAmount,
     });
     console.log('operator top-up prepared', {
       from: address,
       operator,
-      amountWei: amount.toString(),
+      requiredAmountWei: requiredAmount.toString(),
+      amountWei: topUpAmount.toString(),
       gasOverrides,
     });
     const hash = await sendTransactionAsync({
       to: operator,
-      value: amount,
+      value: topUpAmount,
       ...gasOverrides,
     });
     console.log('operator top-up transaction sent', {
@@ -75,7 +84,7 @@ export function useOperatorAddress() {
       operator,
       hash,
     });
-  }, [address, sendTransactionAsync]);
+  }, [address, onOperatorTopUp, sendTransactionAsync]);
 
   const createOperatorAddress = useCallback((keysOrPrivateKey) => {
     const privateKey = typeof keysOrPrivateKey === 'string'

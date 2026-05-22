@@ -46,6 +46,8 @@ export function useTable({
   initialIsSeated = null,
   onActivity,
   onSeat: onSeatEvent,
+  networkEnabled = false,
+  onOperatorTopUp,
 } = {}) {
   const { address: playerAddress } = useConnection();
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
@@ -84,10 +86,11 @@ export function useTable({
     tableDetails: tableSessionDetails,
     seats,
     onActivity,
+    onOperatorTopUp,
     isTableFull,
     tableCapacity,
   });
-  const [publishMessage, subscribeTo] = network;
+  const [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession] = network;
   const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
   const mySeatNo = useMemo(() => (
@@ -106,6 +109,7 @@ export function useTable({
   ].join('::');
 
   useEffect(() => {
+    if (!networkEnabled) return;
     if (!isTableFull || !previousSeat?.playerAddress) return;
     if (subscribedPrecedingPeerKeyRef.current === subscriptionKey) return;
 
@@ -118,7 +122,7 @@ export function useTable({
         event,
       });
     });
-  }, [isTableFull, subscriptionKey]);
+  }, [isTableFull, networkEnabled, subscriptionKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +209,9 @@ export function useTable({
     refresh: () => setRefreshTrigger((current) => current + 1),
     hasJoinedTable: isSeated === true,
     network,
+    networkSnapshot,
+    playerNetworkStates: networkSnapshot?.peerStates ?? {},
+    prepareNetworkSession,
     publishMessage,
     subscribeTo,
   });

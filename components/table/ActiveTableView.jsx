@@ -9,6 +9,7 @@ export default function ActiveTableView({ table, debugConsole, children }) {
     <TableScreen
       tableData={table.tableData}
       currentPlayerAddress={currentSeat.playerAddress}
+      playerNetworkStates={table.playerNetworkStates}
       debugConsole={debugConsole}
       showActionBar={table.tableData !== undefined}
       actionBarProps={{}}

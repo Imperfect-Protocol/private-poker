@@ -9,6 +9,7 @@ export default function TablePlayer({
   isMe,
   isEmptySeat,
   isTheirTurn,
+  networkState,
   heroCards = [],
 }) {
   return (
@@ -42,6 +43,7 @@ export default function TablePlayer({
             isEmptySeat={isEmptySeat}
             isMe={isMe}
             player={player}
+            networkState={networkState}
           />
         </div>
       </div>

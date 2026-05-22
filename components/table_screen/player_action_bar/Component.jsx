@@ -7,7 +7,6 @@ import BetRaiseSlider from '@/components/table_screen/player_action_bar/BetRaise
 export default function Component({ minBet = 20, maxBet = 100, step = 5 }) {
   const [betAmount, setBetAmount] = useState(minBet);
 
-  const percentFill = ((betAmount - minBet) / (maxBet - minBet)) * 100;
   const presets = [0, 25, 50, 75, 100];
 
   return (
@@ -21,7 +20,6 @@ export default function Component({ minBet = 20, maxBet = 100, step = 5 }) {
           maxBet={maxBet}
           step={step}
           betAmount={betAmount}
-          percentFill={percentFill}
           presets={presets}
           onChange={setBetAmount}
         />

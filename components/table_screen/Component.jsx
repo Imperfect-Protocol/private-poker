@@ -1,3 +1,4 @@
+import { Children } from 'react';
 import PlayerActionBar from '@/components/table_screen/player_action_bar/Component';
 import Background from '@/components/table_screen/Background';
 import CommunityCards from '@/components/table_screen/CommunityCards';
@@ -10,12 +11,13 @@ import Title from '@/components/table_screen/Title';
 export default function TableScreen({
   tableData,
   currentPlayerAddress,
+  playerNetworkStates = {},
   showActionBar = false,
   actionBarProps = {},
   debugConsole = null,
   children,
 }) {
-  const hasDimOverlay = Boolean(children);
+  const hasDimOverlay = Children.toArray(children).length > 0;
   const communityCards = parseCards(tableData?.current_hand?.community_cards);
 
   return (
@@ -44,6 +46,7 @@ export default function TableScreen({
           <TablePlayers
             tableData={tableData}
             currentPlayerAddress={currentPlayerAddress}
+            playerNetworkStates={playerNetworkStates}
           />
         </div>
 

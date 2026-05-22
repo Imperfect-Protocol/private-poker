@@ -53,6 +53,7 @@ function getSeatedPlayers(tableData, currentPlayerAddress) {
 export default function TablePlayers({
   tableData,
   currentPlayerAddress,
+  playerNetworkStates = {},
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
@@ -61,6 +62,9 @@ export default function TablePlayers({
   return seatedPlayers.map((player, index) => {
     const isEmptySeat = Boolean(player.isEmptySeat);
     const isMe = !isEmptySeat && player.playerAddress?.toLowerCase() === currentPlayerAddress?.toLowerCase();
+    const networkState = isEmptySeat
+      ? 'sitting-out'
+      : playerNetworkStates[player.playerAddress?.toLowerCase()] ?? 'sitting-out';
     const originalIndex = isEmptySeat ? -1 : tableData.players.findIndex((candidate) => candidate.playerAddress === player.playerAddress);
     const isTheirTurn = !isEmptySeat && tableData.current_hand?.current_player === originalIndex.toString();
 
@@ -72,6 +76,7 @@ export default function TablePlayers({
         isMe={isMe}
         isEmptySeat={isEmptySeat}
         isTheirTurn={isTheirTurn}
+        networkState={networkState}
         heroCards={heroCards}
       />
     );

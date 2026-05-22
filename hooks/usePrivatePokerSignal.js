@@ -14,10 +14,10 @@ const SIGNAL_ABI = parseAbi([
 
 const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
 
-export function usePrivatePokerSignal() {
+export function usePrivatePokerSignal({ onOperatorTopUp } = {}) {
     const { address } = useConnection();
     const { mutateAsync, isPending } = useWriteContract();
-    const { writeContractFromOperator } = useOperatorAddress();
+    const { writeContractFromOperator } = useOperatorAddress({ onOperatorTopUp });
 
     const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes, operatorSigner = undefined) => {
         if (!hasSignalContract) {

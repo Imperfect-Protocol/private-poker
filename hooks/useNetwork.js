@@ -57,11 +57,12 @@ export function useNetwork({
   tableDetails,
   seats = [],
   onActivity,
+  onOperatorTopUp,
   isTableFull = false,
   tableCapacity = 0,
 } = {}) {
   const { address: playerAddress } = useConnection();
-  const { sendSignal } = usePrivatePokerSignal();
+  const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
@@ -97,6 +98,7 @@ export function useNetwork({
       onStateChange: () => {},
     }),
   );
+  const [networkSnapshot, setNetworkSnapshot] = useState(() => session.getSnapshot());
 
   useEffect(() => {
     const sessionConfigKey = makeSessionConfigKey({
@@ -119,7 +121,7 @@ export function useNetwork({
     session.setCallbacks({
       sendSignal: (...args) => sendSignalRef.current(...args),
       onActivity: (...args) => onActivityRef.current?.(...args),
-      onStateChange: () => {},
+      onStateChange: setNetworkSnapshot,
     });
     session.update({
       playerAddress,
@@ -198,5 +200,32 @@ export function useNetwork({
     tableId,
   ]);
 
-  return [publishMessage, subscribeTo];
+  const prepareNetworkSession = useCallback(async () => {
+    const keys = blsKeys ?? await generateKeys(tableDetails);
+    session.update({
+      playerAddress,
+      operator: keys.operator,
+      tableId,
+      lobbyId,
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      operatorPrivateKey: keys.operatorPrivateKey,
+      players,
+      isTableFull,
+      tableCapacity,
+    });
+    return keys;
+  }, [
+    blsKeys,
+    generateKeys,
+    isTableFull,
+    lobbyId,
+    playerAddress,
+    playersKey,
+    tableCapacity,
+    tableDetails,
+    tableId,
+  ]);
+
+  return [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession];
 }

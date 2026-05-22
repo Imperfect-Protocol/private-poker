@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useCreateTable } from '@/hooks/useCreateTable';
+import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 import { getGameTypeName } from '@/lib/constants';
 import { STAKES_OPTIONS } from '@/lib/stakes';
@@ -9,7 +9,7 @@ import { STAKES_OPTIONS } from '@/lib/stakes';
 export default function CreateTableDialog({
   lobbyId,
   onPreviewNameChange,
-  onCreated,
+  onCreateRequest,
   onCancel,
 }) {
   const [lobbyInfo, setLobbyInfo] = useState({ name: "Loading...", gameType: 1 });
@@ -26,7 +26,7 @@ export default function CreateTableDialog({
     lobbyId: Number(lobbyId),
   });
 
-  const { createTableWithBuyIn, getLobbyById, getTableCount, getTablesRange } = useCreateTable();
+  const { getLobbyById, getTableCount, getTablesRange } = usePrivatePokerLobby();
 
   useEffect(() => {
     setFormData((current) => ({
@@ -115,9 +115,8 @@ export default function CreateTableDialog({
     }
 
     try {
-      setIsPending(true);
       const tableId = Date.now();
-      const { publicKeyBytes, keys } = await createTableWithBuyIn({
+      const request = {
         lobbyId: formData.lobbyId,
         lobbyName: lobbyInfo.name,
         tableId,
@@ -126,20 +125,8 @@ export default function CreateTableDialog({
         blinds: formData.blinds,
         stakesLabel: STAKES_OPTIONS.find((option) => option.buyin === formData.buyin)?.label?.split(':')[0],
         numPlayers: formData.maxPlayers,
-      });
-
-      const tableData = {
-        id: tableId,
-        name: cleanName,
-        buyin: formData.buyin,
-        maxSeats: formData.maxPlayers,
-        players: keys?.operator
-          ? [{ playerAddress: keys.playerAddress, operator: keys.operator, chips: formData.buyin.toString(), annoncePublicKey: publicKeyBytes }]
-          : [],
-        current_hand: { min_bet: 10, max_bet: 100, bet_step: 10, community_cards: "" },
       };
-
-      closeDialog(() => onCreated?.({ tableData, tableId, lobbyId: formData.lobbyId }));
+      closeDialog(() => onCreateRequest?.(request));
     } catch (error) {
       console.error(error);
       setSubmitError(error.shortMessage || error.details || error.message || "Transaction failed or was rejected by the wallet.");

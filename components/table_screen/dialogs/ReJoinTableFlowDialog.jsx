@@ -1,0 +1,71 @@
+"use client";
+
+import { useEffect, useRef, useState } from 'react';
+import FlowStepDialog from '@/components/table_screen/dialogs/FlowStepDialog';
+
+const connectionStatus = (state) => {
+  if (state === 'Connected') return 'complete';
+  if (state === 'Disconnected') return 'error';
+  if (state === 'OfferSent' || state === 'AcceptSent' || state === 'AcceptReceived' || state === 'Created') return 'active';
+  return 'pending';
+};
+
+export default function ReJoinTableFlowDialog({
+  table,
+  networkSnapshot,
+  onEnableNetwork,
+  onReady,
+  onTopUpFactorChange,
+}) {
+  const startedRef = useRef(false);
+  const [signatureStatus, setSignatureStatus] = useState('pending');
+  const [topUpFactor, setTopUpFactor] = useState(10);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    onTopUpFactorChange?.(topUpFactor);
+  }, [onTopUpFactorChange, topUpFactor]);
+
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    const run = async () => {
+      try {
+        setSignatureStatus('active');
+        await table.prepareNetworkSession();
+        setSignatureStatus('complete');
+        onEnableNetwork?.();
+      } catch (err) {
+        console.error(err);
+        setSignatureStatus('error');
+        setError(err.shortMessage || err.details || err.message || 'Table session authorization failed.');
+      }
+    };
+
+    run();
+  }, [onEnableNetwork, table]);
+
+  const inboundStatus = connectionStatus(networkSnapshot?.inboundState);
+  const outboundStatus = connectionStatus(networkSnapshot?.outboundState);
+  const isComplete = signatureStatus === 'complete'
+    && inboundStatus === 'complete'
+    && outboundStatus === 'complete';
+
+  return (
+    <FlowStepDialog
+      title="Joining P2P Network"
+      description="We will restore your table session and connect the inbound and outbound poker channels. The table stays locked until peers are connected."
+      topUpFactor={topUpFactor}
+      onTopUpFactorChange={setTopUpFactor}
+      error={error}
+      isComplete={isComplete}
+      onOk={onReady}
+      steps={[
+        { id: 'signature', label: 'Signature to generate BLS', status: signatureStatus },
+        { id: 'inbound', label: 'Peer Connection Inbound', status: inboundStatus },
+        { id: 'outbound', label: 'Peer Connection Outbound', status: outboundStatus },
+      ]}
+    />
+  );
+}

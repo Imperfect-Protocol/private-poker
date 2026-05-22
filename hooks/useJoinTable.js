@@ -18,7 +18,9 @@ export function useJoinTable() {
     buyIn,
     blinds,
     stakesLabel,
+    onStep,
   }) => {
+    onStep?.('signature', 'active');
     const keys = await generateKeys({
       lobbyId,
       tableId,
@@ -27,9 +29,14 @@ export function useJoinTable() {
       blinds,
       stakesLabel,
     });
+    onStep?.('signature', 'complete');
     const publicKeyBytes = `0x${keys.publicKey}`;
+    onStep?.('approval', 'active');
     await ensureBuyInAllowance(buyIn);
+    onStep?.('approval', 'complete');
+    onStep?.('transfer', 'active');
     await joinTable(lobbyId, tableId, toChipUnits(buyIn), address, keys.operator, publicKeyBytes);
+    onStep?.('transfer', 'complete');
     return { publicKeyBytes, keys };
   }, [address, ensureBuyInAllowance, generateKeys, joinTable]);
 

@@ -15,7 +15,7 @@ export function usePokerChips() {
   const { address } = useConnection();
   const { mutateAsync } = useWriteContract();
 
-  const ensureBuyInAllowance = async (buyIn) => {
+  const getBuyInApprovalState = async (buyIn) => {
     if (!isAddress(CHIPS_CONTRACT_ADDRESS)) {
       throw new Error("Poker Chips contract address is not configured.");
     }
@@ -27,7 +27,9 @@ export function usePokerChips() {
     }
 
     const amount = toChipUnits(buyIn);
-    if (amount === 0n) return;
+    if (amount === 0n) {
+      return { amount, balance: 0n, allowance: 0n, willRequireApproval: false };
+    }
 
     const [balance, allowance] = await Promise.all([
       publicPokerClient.readContract({
@@ -47,7 +49,22 @@ export function usePokerChips() {
     if (balance < amount) {
       throw new Error("Insufficient Chips balance for this buy-in.");
     }
-    if (allowance >= amount) return;
+
+    return {
+      amount,
+      balance,
+      allowance,
+      willRequireApproval: allowance < amount,
+    };
+  };
+
+  const willRequireBuyInApproval = async (buyIn) => (
+    (await getBuyInApprovalState(buyIn)).willRequireApproval
+  );
+
+  const ensureBuyInAllowance = async (buyIn) => {
+    const { amount, willRequireApproval } = await getBuyInApprovalState(buyIn);
+    if (!willRequireApproval) return;
 
     const args = [LOBBY_CONTRACT_ADDRESS, amount];
     const txRequest = {
@@ -70,5 +87,5 @@ export function usePokerChips() {
     await publicPokerClient.waitForTransactionReceipt({ hash });
   };
 
-  return { ensureBuyInAllowance };
+  return { ensureBuyInAllowance, getBuyInApprovalState, willRequireBuyInApproval };
 }

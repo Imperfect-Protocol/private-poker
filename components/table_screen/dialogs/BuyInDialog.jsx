@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from 'react';
-import { useJoinTable } from '@/hooks/useJoinTable';
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 
-export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
-  const { joinTableWithBuyIn } = useJoinTable();
-
+export default function BuyInDialog({ tableData, lobbyId, onClose, onJoinRequest }) {
   const [isPending, setIsPending] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -22,15 +19,15 @@ export default function BuyInDialog({ tableData, lobbyId, onClose, onJoined }) {
 
     try {
       setIsPending(true);
-      await joinTableWithBuyIn({
+      const request = {
         lobbyId,
         tableId: tableData.id,
         tableName: tableData.name,
         buyIn: tableData.buyin,
         blinds: tableData.blinds,
         stakesLabel: tableData.stakes,
-      });
-      closeDialog(onJoined);
+      };
+      closeDialog(() => onJoinRequest?.(request));
     } catch (error) {
       console.error(error);
       setSubmitError(error.shortMessage || error.details || error.message || "Transaction failed or rejected.");
