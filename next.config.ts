@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   async rewrites() {
+    if (process.env.NODE_ENV !== "development") {
+      return [];
+    }
+
     return [
       {
         source: '/local-rpc',

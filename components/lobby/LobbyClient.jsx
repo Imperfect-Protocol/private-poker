@@ -7,7 +7,7 @@ export default function LobbyClient({ id }) {
   const { tables, lobbyInfo, userTables, isLoading } = useLobby(id);
 
   return (
-    <main className="min-h-screen bg-slate-950 p-4 md:px-24 md:py-8 flex flex-col items-center justify-start">
+    <main className="min-h-full bg-slate-950 p-4 md:px-24 md:py-8 flex flex-col items-center justify-start">
       <div className="w-full max-w-5xl">
 
         <div className="flex flex-col md:flex-row justify-between items-end mb-8 px-2">

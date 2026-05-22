@@ -2,9 +2,9 @@ import Navbar from '@/components/layout/Navbar';
 
 export default function SiteLayout({ children }) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex min-h-screen flex-col bg-slate-950 [--navbar-height:4rem]">
       <Navbar />
-      <main className="flex-grow">
+      <main className="min-h-0 h-[calc(100vh-var(--navbar-height))] overflow-auto">
         {children}
       </main>
     </div>

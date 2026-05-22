@@ -10,7 +10,7 @@ const STATUS_STYLES = {
   optional: 'bg-slate-500',
 };
 
-function StepRow({ label, status = 'pending', children }) {
+function StepRow({ label, status = 'pending', action, children }) {
   return (
     <div className="flex flex-col gap-3 bg-slate-950 border border-slate-800 rounded-lg p-4">
       <div className="flex items-center justify-between gap-4">
@@ -20,9 +20,12 @@ function StepRow({ label, status = 'pending', children }) {
             {label}
           </span>
         </div>
-        <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">
-          {status}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">
+            {status}
+          </span>
+          {action}
+        </div>
       </div>
       {children}
     </div>
@@ -55,7 +58,7 @@ export default function FlowStepDialog({
 
         <div className="flex flex-col gap-3">
           {steps.map((step) => (
-            <StepRow key={step.id} label={step.label} status={step.status}>
+            <StepRow key={step.id} label={step.label} status={step.status} action={step.action}>
               {step.body}
             </StepRow>
           ))}

@@ -109,21 +109,27 @@ export function useTable({
     previousSeat?.announcePublicKey ?? '',
   ].join('::');
 
-  useEffect(() => {
-    if (!networkEnabled) return;
+  const subscribeToPreviousSeat = useCallback(async () => {
     if (!isTableFull || !previousSeat?.playerAddress) return;
-    if (subscribedPrecedingPeerKeyRef.current === subscriptionKey) return;
 
-    subscribedPrecedingPeerKeyRef.current = subscriptionKey;
     const { playerAddress: peerPlayerAddress, announcePublicKey } = previousSeat;
-    subscribeTo(peerPlayerAddress, announcePublicKey, (seatNo, event) => {
+    await subscribeTo(peerPlayerAddress, announcePublicKey, (seatNo, event) => {
       onSeat(seatNo, {
         kind: 'network',
         playerAddress: peerPlayerAddress,
         event,
       });
     });
-  }, [isTableFull, networkEnabled, subscriptionKey]);
+  }, [isTableFull, onSeat, previousSeat, subscribeTo]);
+
+  useEffect(() => {
+    if (!networkEnabled) return;
+    if (!isTableFull || !previousSeat?.playerAddress) return;
+    if (subscribedPrecedingPeerKeyRef.current === subscriptionKey) return;
+
+    subscribedPrecedingPeerKeyRef.current = subscriptionKey;
+    subscribeToPreviousSeat();
+  }, [isTableFull, networkEnabled, subscribeToPreviousSeat, subscriptionKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,6 +220,7 @@ export function useTable({
     playerNetworkStates: networkSnapshot?.peerStates ?? {},
     prepareNetworkSession,
     publishMessage,
+    retryInboundConnection: subscribeToPreviousSeat,
     subscribeTo,
   });
 }

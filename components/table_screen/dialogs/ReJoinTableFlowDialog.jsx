@@ -55,7 +55,20 @@ export default function ReJoinTableFlowDialog({
       onOk={onReady}
       steps={[
         { id: 'signature', label: 'Generate table BLS key', status: signatureStatus },
-        { id: 'inbound', label: 'Peer Connection Inbound', status: inboundStatus },
+        {
+          id: 'inbound',
+          label: 'Peer Connection Inbound',
+          status: inboundStatus,
+          action: inboundStatus === 'error' ? (
+            <button
+              type="button"
+              onClick={() => table.retryInboundConnection?.()}
+              className="rounded border border-red-400/50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-red-200 transition-colors hover:border-red-300 hover:bg-red-400/10"
+            >
+              Retry
+            </button>
+          ) : null,
+        },
         { id: 'outbound', label: 'Peer Connection Outbound', status: outboundStatus },
       ]}
     />
