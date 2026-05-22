@@ -1,47 +1,33 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAppKit } from '@reown/appkit/react';
-import { useConnection, useSignMessage } from 'wagmi';
-import { keccak256, toBytes } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { useConnection, useWriteContract } from 'wagmi';
+import { isAddress, parseAbi } from 'viem';
+import { PRIVATE_POKER_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS } from '@/lib/chain';
 import { SUBSCRIPTION_TIERS } from '@/lib/constants';
+import { getBufferedGasOverrides } from '@/lib/gas';
+import { buildAccountSessionTypedData } from '@/lib/accountSession';
+import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
+import { useOperatorAddress } from '@/hooks/useOperatorAddress';
+import { publicPokerClient } from '@/lib/publicPokerClient';
 
-const SESSION_STORAGE_KEY = 'private-poker:account-session';
+const USDC_SCALE = 1_000_000n;
+
+const USDC_ABI = parseAbi([
+  "function approve(address spender, uint256 value) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function transferFrom(address from, address to, uint256 value) returns (bool)",
+]);
+
+const ACCOUNT_ABI = parseAbi([
+  "function subscribe(address player_address, address operator, bytes annonce_public_key, bytes encrypted_profile, uint8 subscription_tier)",
+  "function isSubscriptionActive(address player_address) view returns (bool)",
+]);
 
 function formatAddress(address) {
   if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function buildSigninMessage(address) {
-  return [
-    'Welcome to PrivatePoker!',
-    '',
-    'Sign this message to unlock your player account for this browser session.',
-    '',
-    'This signature does not spend gas and does not move funds.',
-    'It creates a private session seed used for poker identities, table operators, and encrypted peer-to-peer play.',
-    '',
-    `Wallet: ${address}`,
-    'Network: Arbitrum Sepolia',
-    'Account Scope: PrivatePoker account sign-in',
-  ].join('\n');
-}
-
-function deriveAccountSession(signature, address) {
-  const seed = keccak256(signature);
-  const operatorPrivateKey = keccak256(toBytes(`${signature}:PrivatePoker:AccountOperator`));
-  const operatorAccount = privateKeyToAccount(operatorPrivateKey);
-
-  return {
-    walletAddress: address,
-    seed,
-    operator: operatorAccount.address,
-    operatorPublicKey: operatorAccount.publicKey,
-    signedAt: new Date().toISOString(),
-  };
 }
 
 function TierCard({ tier, selected, onSelect }) {
@@ -78,54 +64,172 @@ function TierCard({ tier, selected, onSelect }) {
   );
 }
 
+function tierToContractId(tier) {
+  const index = SUBSCRIPTION_TIERS.findIndex((entry) => entry.id === tier.id);
+  return index + 1;
+}
+
+function tierUsdcAmount(tier) {
+  return BigInt(tier.monthlyUsd) * USDC_SCALE;
+}
+
 export default function AccountSignin() {
   const router = useRouter();
-  const { open } = useAppKit();
-  const { address, isConnected } = useConnection();
-  const { signMessageAsync, isPending } = useSignMessage();
+  const { accountSession, isSigningIn, isWalletConnected, signIn } = useAccountSession();
+  const { address } = useConnection();
+  const { mutateAsync: writeWalletContract } = useWriteContract();
+  const { createOperatorAddress } = useOperatorAddress();
   const [step, setStep] = useState('signin');
-  const [accountSession, setAccountSession] = useState(null);
   const [selectedTier, setSelectedTier] = useState(SUBSCRIPTION_TIERS[1]);
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(false);
+  const [subscriptionStep, setSubscriptionStep] = useState('');
   const [error, setError] = useState('');
 
-  const signinMessage = useMemo(() => (
-    address ? buildSigninMessage(address) : ''
-  ), [address]);
+  const signinData = useMemo(() => buildAccountSessionTypedData(), []);
+  const signinFields = useMemo(() => (
+    Object.entries(signinData.message).map(([field, value]) => ({
+      field,
+      value: typeof value === 'bigint' ? value.toString() : value,
+    }))
+  ), [signinData]);
+
+  useEffect(() => {
+    if (!accountSession?.walletAddress) return undefined;
+
+    let isMounted = true;
+    const checkAccount = async () => {
+      if (!isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
+        if (isMounted) setStep('subscription');
+        return;
+      }
+
+      setIsCheckingAccount(true);
+      try {
+        const isActive = await publicPokerClient.readContract({
+          address: PRIVATE_POKER_CONTRACT_ADDRESS,
+          abi: ACCOUNT_ABI,
+          functionName: 'isSubscriptionActive',
+          args: [accountSession.walletAddress],
+        });
+        if (!isMounted) return;
+        if (isActive) {
+          router.replace('/main-lobby');
+          return;
+        }
+        setStep('subscription');
+      } catch (err) {
+        console.error('Account subscription check failed:', err);
+        if (isMounted) setStep('subscription');
+      } finally {
+        if (isMounted) setIsCheckingAccount(false);
+      }
+    };
+
+    checkAccount();
+    return () => {
+      isMounted = false;
+    };
+  }, [accountSession?.walletAddress, router]);
 
   const handleSignin = async () => {
     setError('');
 
-    if (!isConnected || !address) {
-      open();
-      return;
-    }
-
     try {
-      const signature = await signMessageAsync({ message: signinMessage });
-      const session = deriveAccountSession(signature, address);
-      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-      console.log('account session', {
-        wallet: session.walletAddress,
-        operator: session.operator,
-      });
-      setAccountSession(session);
-      setStep('subscription');
+      const session = await signIn();
+      if (session) setIsCheckingAccount(true);
     } catch (err) {
       console.error('Account sign-in failed:', err);
       setError('Signature cancelled. Sign in when you are ready.');
     }
   };
 
-  const handleContinue = () => {
-    const currentSession = accountSession ?? {
-      walletAddress: address,
-      signedAt: new Date().toISOString(),
-    };
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
-      ...currentSession,
-      subscriptionTier: selectedTier.id,
-    }));
-    router.push('/main-lobby');
+  const approveOperatorUsdc = async (session, amount) => {
+    const allowance = await publicPokerClient.readContract({
+      address: USDC_CONTRACT_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'allowance',
+      args: [session.walletAddress, session.operator],
+    });
+    if (allowance >= amount) return;
+
+    const args = [session.operator, amount];
+    const overrides = await getBufferedGasOverrides(publicPokerClient, {
+      address: USDC_CONTRACT_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'approve',
+      args,
+      account: session.walletAddress,
+    });
+    const hash = await writeWalletContract({
+      address: USDC_CONTRACT_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'approve',
+      args,
+      ...overrides,
+    });
+    await publicPokerClient.waitForTransactionReceipt({ hash });
+  };
+
+  const handleContinue = async () => {
+    setError('');
+
+    try {
+      if (!isAddress(USDC_CONTRACT_ADDRESS)) {
+        throw new Error('USDC contract address is not configured.');
+      }
+      if (!isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
+        throw new Error('PrivatePoker contract address is not configured.');
+      }
+
+      const session = accountSession ?? await signIn();
+      if (!session) return;
+      if (!address || address.toLowerCase() !== session.walletAddress.toLowerCase()) {
+        throw new Error('Connected wallet does not match the signed-in account.');
+      }
+
+      setIsSubscribing(true);
+      const amount = tierUsdcAmount(selectedTier);
+      const operator = createOperatorAddress(session.operatorPrivateKey);
+
+      setSubscriptionStep('Approve USDC for Operator...');
+      await approveOperatorUsdc(session, amount);
+
+      setSubscriptionStep('Operator transfers USDC into PrivatePoker...');
+      const transferHash = await operator.writeContract({
+        contract: USDC_CONTRACT_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'transferFrom',
+        args: [session.walletAddress, PRIVATE_POKER_CONTRACT_ADDRESS, amount],
+      });
+      await publicPokerClient.waitForTransactionReceipt({ hash: transferHash });
+
+      setSubscriptionStep('Operator creates account...');
+      const subscribeHash = await operator.writeContract({
+        contract: PRIVATE_POKER_CONTRACT_ADDRESS,
+        abi: ACCOUNT_ABI,
+        functionName: 'subscribe',
+        args: [
+          session.walletAddress,
+          session.operator,
+          session.operatorPublicKey ?? '0x',
+          '0x',
+          tierToContractId(selectedTier),
+        ],
+      });
+      await publicPokerClient.waitForTransactionReceipt({ hash: subscribeHash });
+
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('private-poker:subscription-tier', selectedTier.id);
+      }
+      router.push('/main-lobby');
+    } catch (err) {
+      console.error('Subscription failed:', err);
+      setError(err?.shortMessage ?? err?.message ?? 'Subscription failed.');
+    } finally {
+      setIsSubscribing(false);
+      setSubscriptionStep('');
+    }
   };
 
   return (
@@ -163,7 +267,16 @@ export default function AccountSignin() {
         </section>
 
         <section className="rounded border border-teal-500/15 bg-slate-900/70 p-6 md:p-8">
-          {step === 'signin' ? (
+          {isCheckingAccount ? (
+            <div className="py-16 text-center">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">
+                Checking Account
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                Looking up your PrivatePoker subscription on chain.
+              </p>
+            </div>
+          ) : step === 'signin' ? (
             <div>
               <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-6">
                 <div>
@@ -172,15 +285,30 @@ export default function AccountSignin() {
                     Your wallet signs a message. No gas, no transaction, no funds moved.
                   </p>
                 </div>
-                {address && (
+                {accountSession?.walletAddress && (
                   <div className="rounded border border-teal-500/25 bg-slate-950 px-3 py-2 font-mono text-xs font-bold text-teal-300">
-                    {formatAddress(address)}
+                    {formatAddress(accountSession.walletAddress)}
                   </div>
                 )}
               </div>
 
-              <div className="mt-6 rounded border border-slate-800 bg-slate-950/70 p-5 font-mono text-xs leading-6 text-slate-400">
-                {signinMessage || 'Connect your wallet to prepare your account signature.'}
+              <div className="mt-6 rounded border border-slate-800 bg-slate-950/70 p-5 font-mono text-xs leading-6">
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <span className="uppercase tracking-[0.24em] text-slate-500">Domain</span>
+                    <span className="text-teal-300">{signinData.domain.name} v{signinData.domain.version}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <span className="uppercase tracking-[0.24em] text-slate-500">Type</span>
+                    <span className="text-teal-300">{signinData.primaryType}</span>
+                  </div>
+                  {signinFields.map(({ field, value }) => (
+                    <div key={field} className="grid grid-cols-[9rem_1fr] gap-4">
+                      <span className="uppercase tracking-[0.18em] text-slate-500">{field}</span>
+                      <span className="text-slate-300">{value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {error && (
@@ -192,10 +320,10 @@ export default function AccountSignin() {
               <button
                 type="button"
                 onClick={handleSignin}
-                disabled={isPending}
+                disabled={isSigningIn}
                 className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
               >
-                {!isConnected ? 'Connect Wallet' : isPending ? 'Signing...' : 'Sign In'}
+                {!isWalletConnected ? 'Connect Wallet' : isSigningIn ? 'Signing...' : 'Sign In'}
               </button>
             </div>
           ) : (
@@ -228,10 +356,17 @@ export default function AccountSignin() {
               <button
                 type="button"
                 onClick={handleContinue}
-                className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300"
+                disabled={isSubscribing}
+                className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
               >
-                Continue
+                {isSubscribing ? subscriptionStep : 'Continue'}
               </button>
+
+              {error && (
+                <div className="mt-4 rounded border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                  {error}
+                </div>
+              )}
             </div>
           )}
         </section>

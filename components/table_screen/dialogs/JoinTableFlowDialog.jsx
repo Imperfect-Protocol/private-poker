@@ -6,16 +6,15 @@ import { useJoinTable } from '@/hooks/useJoinTable';
 
 const initialSteps = {
   signature: 'pending',
-  approval: 'pending',
+  operatorApproval: 'pending',
   transfer: 'pending',
 };
 
-export default function JoinTableFlowDialog({ request, onComplete }) {
-  const { joinTableWithBuyIn } = useJoinTable();
+export default function JoinTableFlowDialog({ request, onComplete, onOperatorTopUp }) {
+  const { joinTableWithBuyIn } = useJoinTable({ onOperatorTopUp });
   const startedRef = useRef(false);
   const resultRef = useRef(null);
   const [steps, setSteps] = useState(initialSteps);
-  const [topUpFactor, setTopUpFactor] = useState(10);
   const [error, setError] = useState('');
   const [isComplete, setIsComplete] = useState(false);
 
@@ -51,16 +50,14 @@ export default function JoinTableFlowDialog({ request, onComplete }) {
   return (
     <FlowStepDialog
       title="Joining Table"
-      description="We will create your deterministic table session, approve the CHIPS buy-in if needed, then join the table on Arbitrum."
-      topUpFactor={topUpFactor}
-      onTopUpFactorChange={setTopUpFactor}
+      description="Your Player Operator will approve the CHIPS buy-in, then join the table and move the CHIPS into PrivatePoker."
       error={error}
       isComplete={isComplete}
       onOk={() => onComplete?.(resultRef.current)}
       steps={[
-        { id: 'signature', label: 'Signature to generate BLS', status: steps.signature },
-        { id: 'approval', label: 'Approval for CHIPS transfer', status: steps.approval },
-        { id: 'transfer', label: 'CHIPS transfer', status: steps.transfer },
+        { id: 'signature', label: 'Generate table BLS key', status: steps.signature },
+        { id: 'operatorApproval', label: 'Operator approves CHIPS', status: steps.operatorApproval },
+        { id: 'transfer', label: 'Join table and move CHIPS', status: steps.transfer },
       ]}
     />
   );

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnection } from 'wagmi';
+import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useNetwork } from '@/hooks/useNetwork';
 import { useNetworkTopology } from '@/hooks/useNetworkTopology';
@@ -49,7 +49,8 @@ export function useTable({
   networkEnabled = false,
   onOperatorTopUp,
 } = {}) {
-  const { address: playerAddress } = useConnection();
+  const { accountSession } = useAccountSession();
+  const playerAddress = accountSession?.walletAddress;
   const { getTableDetail, getPlayerTables } = usePrivatePokerLobby();
   const [liveTableData, setLiveTableData] = useState(initialTableData);
   const [isLoading, setIsLoading] = useState(!initialTableData);

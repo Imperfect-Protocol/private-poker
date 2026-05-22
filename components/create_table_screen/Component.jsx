@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import CreateTableDialog from '@/components/table_screen/dialogs/CreateTableDialog';
 import CreateTableFlowDialog from '@/components/table_screen/dialogs/CreateTableFlowDialog';
+import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
 import TableScreen from '@/components/table_screen/Component';
 
 function makePreviewTable(name, tableData = null) {
@@ -25,6 +26,7 @@ export default function CreateTableScreen() {
   const [createdTableData, setCreatedTableData] = useState(null);
   const [hasJoinedTable, setHasJoinedTable] = useState(false);
   const [createRequest, setCreateRequest] = useState(null);
+  const [topUpRequest, setTopUpRequest] = useState(null);
   const isCreatingTable = !createdTableData;
   const tableData = makePreviewTable(previewName, createdTableData);
 
@@ -54,6 +56,19 @@ export default function CreateTableScreen() {
     router.push(`/tables/${createRequest.tableId}?lobbyId=${createRequest.lobbyId}`);
   };
 
+  const handleOperatorTopUp = ({ operator, requiredAmount }) => {
+    return new Promise((resolve) => {
+      setTopUpRequest({
+        operator,
+        requiredAmount,
+        resolve: (amount) => {
+          setTopUpRequest(null);
+          resolve(amount);
+        },
+      });
+    });
+  };
+
   return (
     <TableScreen
       tableData={tableData}
@@ -69,7 +84,15 @@ export default function CreateTableScreen() {
       {!hasJoinedTable && createRequest && (
         <CreateTableFlowDialog
           request={createRequest}
+          onOperatorTopUp={handleOperatorTopUp}
           onComplete={handleCreated}
+        />
+      )}
+      {topUpRequest && (
+        <TopUpOperatorGasDialog
+          operator={topUpRequest.operator}
+          requiredAmount={topUpRequest.requiredAmount}
+          onConfirm={topUpRequest.resolve}
         />
       )}
     </TableScreen>

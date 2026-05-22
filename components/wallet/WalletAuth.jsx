@@ -3,18 +3,26 @@
 import { useState, useEffect } from 'react'
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
 import { useDisconnect, useConnection } from 'wagmi'
-import { parseAbi } from 'viem';
-import { CHIPS_CONTRACT_ADDRESS } from '@/lib/chain';
-import { fromChipUnits } from '@/lib/constants';
+import { formatUnits, isAddress, parseAbi } from 'viem';
+import { CHIPS_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS } from '@/lib/chain';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 
 const CHIPS_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
 ]);
 
+function formatUsdcBalance(balance) {
+  return Number(formatUnits(balance, 6)).toFixed(2);
+}
+
+function formatChipsBalance(balance) {
+  return Number(formatUnits(balance, 6)).toFixed(2);
+}
+
 export default function WalletAuth() {
   const [mounted, setMounted] = useState(false)
   const [chipsBalance, setChipsBalance] = useState(null)
+  const [usdcBalance, setUsdcBalance] = useState(null)
   const { open } = useAppKit()
   const { disconnect } = useDisconnect()
   const { isConnected } = useAppKitAccount()
@@ -28,30 +36,47 @@ export default function WalletAuth() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadChipsBalance = async () => {
+    const loadTokenBalances = async () => {
       if (!address) {
         setChipsBalance(null);
+        setUsdcBalance(null);
         return;
       }
 
       try {
-        const balance = await publicPokerClient.readContract({
-          address: CHIPS_CONTRACT_ADDRESS,
-          abi: CHIPS_ABI,
-          functionName: 'balanceOf',
-          args: [address],
-        });
-        if (!cancelled) setChipsBalance(balance);
+        const [chips, usdc] = await Promise.all([
+          isAddress(CHIPS_CONTRACT_ADDRESS)
+            ? publicPokerClient.readContract({
+              address: CHIPS_CONTRACT_ADDRESS,
+              abi: CHIPS_ABI,
+              functionName: 'balanceOf',
+              args: [address],
+            })
+            : Promise.resolve(null),
+          isAddress(USDC_CONTRACT_ADDRESS)
+            ? publicPokerClient.readContract({
+              address: USDC_CONTRACT_ADDRESS,
+              abi: CHIPS_ABI,
+              functionName: 'balanceOf',
+              args: [address],
+            })
+            : Promise.resolve(null),
+        ]);
+        if (!cancelled) {
+          setChipsBalance(chips);
+          setUsdcBalance(usdc);
+        }
       } catch (error) {
         if (!cancelled) {
-          console.error('Failed to load CHIPS balance:', error);
+          console.error('Failed to load token balances:', error);
           setChipsBalance(null);
+          setUsdcBalance(null);
         }
       }
     };
 
-    loadChipsBalance();
-    const timer = setInterval(loadChipsBalance, 10000);
+    loadTokenBalances();
+    const timer = setInterval(loadTokenBalances, 10000);
 
     return () => {
       cancelled = true;
@@ -66,8 +91,12 @@ export default function WalletAuth() {
     return (
       <div className="flex items-center bg-slate-900 border border-teal-500/20 rounded px-1 py-1">
         <div className="flex items-center gap-3 px-3 py-1 font-mono font-bold text-[0.8em]">
+          <span className="text-cyan-300">
+            {usdcBalance === null ? '... USDC' : `${formatUsdcBalance(usdcBalance)} USDC`}
+          </span>
+          <span className="text-slate-700">|</span>
           <span className="text-teal-400">
-            {chipsBalance === null ? '... CHIPS' : `${fromChipUnits(chipsBalance)} CHIPS`}
+            {chipsBalance === null ? '... CHIPS' : `${formatChipsBalance(chipsBalance)} CHIPS`}
           </span>
           <span className="text-slate-700">|</span>
           <span className="text-teal-500">

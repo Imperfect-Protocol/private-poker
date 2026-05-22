@@ -1,19 +1,17 @@
 import { useCallback } from 'react';
-import { useConnection } from 'wagmi';
 import { usePokerChips } from '@/hooks/usePokerChips';
 import { usePrivatePokerLobby } from '@/hooks/usePrivatePokerLobby';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { toChipUnits } from '@/lib/constants';
 
-export function useCreateTable() {
-  const { address } = useConnection();
+export function useCreateTable({ onOperatorTopUp } = {}) {
   const {
     createTable,
     getLobbyById,
     getTableCount,
     getTablesRange,
-  } = usePrivatePokerLobby();
-  const { ensureBuyInAllowance } = usePokerChips();
+  } = usePrivatePokerLobby({ onOperatorTopUp });
+  const { ensureOperatorBuyInAllowance } = usePokerChips({ onOperatorTopUp });
   const { generateKeys } = useRequireBLS();
 
   const createTableWithBuyIn = useCallback(async ({
@@ -39,14 +37,18 @@ export function useCreateTable() {
     });
     onStep?.('signature', 'complete');
     const publicKeyBytes = `0x${keys.publicKey}`;
-    onStep?.('approval', 'active');
-    await ensureBuyInAllowance(buyIn);
-    onStep?.('approval', 'complete');
+    onStep?.('operatorApproval', 'active');
+    await ensureOperatorBuyInAllowance({
+      buyIn,
+      playerAddress: keys.playerAddress,
+      operatorPrivateKey: keys.operatorPrivateKey,
+    });
+    onStep?.('operatorApproval', 'complete');
     onStep?.('transfer', 'active');
-    await createTable(lobbyId, tableId, tableName, toChipUnits(buyIn), numPlayers, address, keys.operator, publicKeyBytes);
+    await createTable(lobbyId, tableId, tableName, toChipUnits(buyIn), numPlayers, keys.playerAddress, keys.operator, publicKeyBytes, keys.operatorPrivateKey);
     onStep?.('transfer', 'complete');
-    return { publicKeyBytes, keys: { ...keys, playerAddress: address } };
-  }, [address, createTable, ensureBuyInAllowance, generateKeys]);
+    return { publicKeyBytes, keys };
+  }, [createTable, ensureOperatorBuyInAllowance, generateKeys]);
 
   return {
     createTableWithBuyIn,

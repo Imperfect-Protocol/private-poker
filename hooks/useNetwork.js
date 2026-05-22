@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnection } from 'wagmi';
+import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { PokerRtcSession } from '@/lib/PokerRtcSession';
@@ -61,7 +61,8 @@ export function useNetwork({
   isTableFull = false,
   tableCapacity = 0,
 } = {}) {
-  const { address: playerAddress } = useConnection();
+  const { accountSession } = useAccountSession();
+  const playerAddress = accountSession?.walletAddress;
   const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;

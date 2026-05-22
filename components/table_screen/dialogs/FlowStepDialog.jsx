@@ -1,7 +1,6 @@
 "use client";
 
 import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
-import Slider from '@/components/slider/Component';
 
 const STATUS_STYLES = {
   pending: 'bg-slate-700',
@@ -37,9 +36,6 @@ export default function FlowStepDialog({
   error,
   isComplete,
   onOk,
-  topUpFactor,
-  onTopUpFactorChange,
-  showTopUp = true,
 }) {
   return (
     <TableDialogOverlay>
@@ -64,27 +60,6 @@ export default function FlowStepDialog({
             </StepRow>
           ))}
 
-          {showTopUp && (
-            <StepRow label="Optional Top-Up" status="optional">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">
-                  Operator gas
-                </span>
-                <span className="text-teal-300 font-mono text-sm font-black">
-                  {topUpFactor}x
-                </span>
-              </div>
-              <Slider
-                min={5}
-                max={25}
-                step={1}
-                value={topUpFactor}
-                presets={[0, 25, 50, 75, 100]}
-                ariaLabel="Operator top-up factor"
-                onChange={onTopUpFactorChange}
-              />
-            </StepRow>
-          )}
         </div>
 
         {error && (

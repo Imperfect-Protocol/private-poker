@@ -6,7 +6,7 @@ import ActiveTableView from '@/components/table/ActiveTableView';
 import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
 import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
 import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
-import { OPERATOR_GAS_MAX_TOPUP } from '@/lib/constants';
+import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
 
 const readCreatedTableSnapshot = (tableId) => {
   if (typeof window === 'undefined') return null;
@@ -43,7 +43,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [networkEnabled, setNetworkEnabled] = useState(false);
   const [showReJoinDialog, setShowReJoinDialog] = useState(false);
   const [reJoinDismissed, setReJoinDismissed] = useState(false);
-  const topUpFactorRef = useRef(10);
+  const [topUpRequest, setTopUpRequest] = useState(null);
 
   const addDebugMessage = useCallback((message) => {
     setMessages((prev) => [...prev, message].slice(-160));
@@ -82,9 +82,17 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     }
   }, [addDebugMessage, handleRtcMessage]);
 
-  const handleOperatorTopUp = useCallback(async ({ requiredAmount }) => {
-    const requestedAmount = BigInt(requiredAmount) * BigInt(topUpFactorRef.current);
-    return requestedAmount < OPERATOR_GAS_MAX_TOPUP ? requestedAmount : OPERATOR_GAS_MAX_TOPUP;
+  const handleOperatorTopUp = useCallback(({ operator, requiredAmount }) => {
+    return new Promise((resolve) => {
+      setTopUpRequest({
+        operator,
+        requiredAmount,
+        resolve: (amount) => {
+          setTopUpRequest(null);
+          resolve(amount);
+        },
+      });
+    });
   }, []);
 
   const table = useTable({
@@ -202,6 +210,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
       {joinRequest && (
         <JoinTableFlowDialog
           request={joinRequest}
+          onOperatorTopUp={handleOperatorTopUp}
           onComplete={() => {
             table.setIsSeated(true);
             setJoinRequest(null);
@@ -216,14 +225,19 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         <ReJoinTableFlowDialog
           table={table}
           networkSnapshot={table.networkSnapshot}
-          onTopUpFactorChange={(factor) => {
-            topUpFactorRef.current = factor;
-          }}
           onEnableNetwork={() => setNetworkEnabled(true)}
           onReady={() => {
             setShowReJoinDialog(false);
             setReJoinDismissed(true);
           }}
+        />
+      )}
+
+      {topUpRequest && (
+        <TopUpOperatorGasDialog
+          operator={topUpRequest.operator}
+          requiredAmount={topUpRequest.requiredAmount}
+          onConfirm={topUpRequest.resolve}
         />
       )}
     </ActiveTableView>

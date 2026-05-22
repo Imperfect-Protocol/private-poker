@@ -1,16 +1,10 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useConnection, useSignTypedData } from 'wagmi';
-import { keccak256, toBytes, toHex } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import * as bls from '@noble/bls12-381';
-import { BLS_TABLE_SESSION_DOMAIN, BLS_TABLE_SESSION_TYPES } from '@/lib/constants';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { deriveTableSessionKeys } from '@/lib/accountSession';
+import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
-const deriveOperatorPrivateKey = (signature) => (
-    keccak256(toBytes(`${signature}:PrivatePoker:Operator`))
-);
 
 export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     if (!tableDetails?.lobbyId || !tableDetails?.tableId || !walletAddress) return null;
@@ -21,30 +15,18 @@ export function makeTableBlsSessionKey(tableDetails, walletAddress) {
     ].join(':');
 }
 
-function buildDerivationTypedData(tableDetails) {
-    return {
-        domain: BLS_TABLE_SESSION_DOMAIN,
-        types: BLS_TABLE_SESSION_TYPES,
-        primaryType: 'PrivatePokerTableSession',
-        message: {
-            tableId: BigInt(tableDetails.tableId),
-            lobbyId: BigInt(tableDetails.lobbyId),
-        },
-    };
-}
-
 const BLSContext = createContext(null);
 
 export function BLSProvider({ children }) {
-    const { address, isConnected } = useConnection();
-    const { mutateAsync } = useSignTypedData();
+    const { accountSession, requireSession } = useAccountSession();
 
     const [tableKeys, setTableKeys] = useState({});
     const [isGenerating, setIsGenerating] = useState(false);
-    const [activeAddress, setActiveAddress] = useState(address);
+    const [activeAddress, setActiveAddress] = useState(accountSession?.walletAddress);
 
     useEffect(() => {
-        if (!isConnected || !address) {
+        const address = accountSession?.walletAddress;
+        if (!address) {
             setTableKeys({});
             setActiveAddress(null);
         } else if (activeAddress && address !== activeAddress) {
@@ -53,19 +35,17 @@ export function BLSProvider({ children }) {
         } else if (!activeAddress && address) {
             setActiveAddress(address);
         }
-    }, [isConnected, address, activeAddress]);
+    }, [accountSession?.walletAddress, activeAddress]);
 
     const getKeys = useCallback((tableDetails) => {
-        const sessionKey = makeTableBlsSessionKey(tableDetails, address);
+        const sessionKey = makeTableBlsSessionKey(tableDetails, accountSession?.walletAddress);
         return sessionKey ? tableKeys[sessionKey] ?? null : null;
-    }, [address, tableKeys]);
+    }, [accountSession?.walletAddress, tableKeys]);
 
     const generateKeys = useCallback(async (tableDetails) => {
-        if (!address) {
-            throw new Error('Wallet must be connected before creating a table session key.');
-        }
+        const session = await requireSession();
 
-        const sessionKey = makeTableBlsSessionKey(tableDetails, address);
+        const sessionKey = makeTableBlsSessionKey(tableDetails, session.walletAddress);
         if (!sessionKey) {
             throw new Error('Table details are required before creating a table session key.');
         }
@@ -74,26 +54,12 @@ export function BLSProvider({ children }) {
         setIsGenerating(true);
 
         try {
-            const signature = await mutateAsync(buildDerivationTypedData(tableDetails));
-            const seedHex = keccak256(signature);
-            const privateKeyBytes = toBytes(seedHex);
-            const publicKeyBytes = bls.getPublicKey(privateKeyBytes);
-            const operatorPrivateKey = deriveOperatorPrivateKey(signature);
-            const operatorAccount = privateKeyToAccount(operatorPrivateKey);
+            const keys = await deriveTableSessionKeys(session, tableDetails, sessionKey);
             console.log('operator', {
                 tableId: tableDetails.tableId?.toString(),
                 lobbyId: tableDetails.lobbyId?.toString(),
-                address: operatorAccount.address,
+                address: keys.operator,
             });
-
-            const keys = {
-                privateKey: toHex(privateKeyBytes).slice(2),
-                publicKey: toHex(publicKeyBytes).slice(2),
-                operatorPrivateKey,
-                operatorPublicKey: operatorAccount.publicKey,
-                operator: operatorAccount.address,
-                sessionKey,
-            };
 
             setTableKeys((current) => ({
                 ...current,
@@ -106,10 +72,10 @@ export function BLSProvider({ children }) {
         } finally {
             setIsGenerating(false);
         }
-    }, [address, mutateAsync, tableKeys]);
+    }, [requireSession, tableKeys]);
     
     return (
-        <BLSContext.Provider value={{ getKeys, isGenerating, generateKeys, isConnected }}>
+        <BLSContext.Provider value={{ getKeys, isGenerating, generateKeys, isConnected: Boolean(accountSession) }}>
             {children}
         </BLSContext.Provider>
     );

@@ -15,16 +15,10 @@ export default function ReJoinTableFlowDialog({
   networkSnapshot,
   onEnableNetwork,
   onReady,
-  onTopUpFactorChange,
 }) {
   const startedRef = useRef(false);
   const [signatureStatus, setSignatureStatus] = useState('pending');
-  const [topUpFactor, setTopUpFactor] = useState(10);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    onTopUpFactorChange?.(topUpFactor);
-  }, [onTopUpFactorChange, topUpFactor]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -56,13 +50,11 @@ export default function ReJoinTableFlowDialog({
     <FlowStepDialog
       title="Joining P2P Network"
       description="We will restore your table session and connect the inbound and outbound poker channels. The table stays locked until peers are connected."
-      topUpFactor={topUpFactor}
-      onTopUpFactorChange={setTopUpFactor}
       error={error}
       isComplete={isComplete}
       onOk={onReady}
       steps={[
-        { id: 'signature', label: 'Signature to generate BLS', status: signatureStatus },
+        { id: 'signature', label: 'Generate table BLS key', status: signatureStatus },
         { id: 'inbound', label: 'Peer Connection Inbound', status: inboundStatus },
         { id: 'outbound', label: 'Peer Connection Outbound', status: outboundStatus },
       ]}

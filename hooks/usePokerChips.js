@@ -1,8 +1,7 @@
-import { useConnection, useWriteContract } from 'wagmi';
 import { isAddress, parseAbi } from 'viem';
 import { CHIPS_CONTRACT_ADDRESS, LOBBY_CONTRACT_ADDRESS } from '@/lib/chain';
 import { toChipUnits } from '@/lib/constants';
-import { getBufferedGasOverrides } from '@/lib/gas';
+import { useOperatorAddress } from '@/hooks/useOperatorAddress';
 import { publicPokerClient } from '@/lib/publicPokerClient';
 
 const CHIPS_ABI = parseAbi([
@@ -11,81 +10,52 @@ const CHIPS_ABI = parseAbi([
   "function approve(address spender, uint256 value) returns (bool)",
 ]);
 
-export function usePokerChips() {
-  const { address } = useConnection();
-  const { mutateAsync } = useWriteContract();
+export function usePokerChips({ onOperatorTopUp } = {}) {
+  const { writeContractFromOperator } = useOperatorAddress({ onOperatorTopUp });
 
-  const getBuyInApprovalState = async (buyIn) => {
+  const ensureOperatorBuyInAllowance = async ({ buyIn, playerAddress, operatorPrivateKey }) => {
     if (!isAddress(CHIPS_CONTRACT_ADDRESS)) {
       throw new Error("Poker Chips contract address is not configured.");
     }
     if (!isAddress(LOBBY_CONTRACT_ADDRESS)) {
       throw new Error("PrivatePokerLobby contract address is not configured.");
     }
-    if (!address) {
-      throw new Error("Connect wallet before buying in.");
+    if (!playerAddress) {
+      throw new Error("Player address is required before buying in.");
     }
 
     const amount = toChipUnits(buyIn);
-    if (amount === 0n) {
-      return { amount, balance: 0n, allowance: 0n, willRequireApproval: false };
-    }
+    if (amount === 0n) return;
 
     const [balance, allowance] = await Promise.all([
       publicPokerClient.readContract({
         address: CHIPS_CONTRACT_ADDRESS,
         abi: CHIPS_ABI,
         functionName: 'balanceOf',
-        args: [address],
+        args: [playerAddress],
       }),
       publicPokerClient.readContract({
         address: CHIPS_CONTRACT_ADDRESS,
         abi: CHIPS_ABI,
         functionName: 'allowance',
-        args: [address, LOBBY_CONTRACT_ADDRESS],
+        args: [playerAddress, LOBBY_CONTRACT_ADDRESS],
       }),
     ]);
 
     if (balance < amount) {
       throw new Error("Insufficient Chips balance for this buy-in.");
     }
+    if (allowance >= amount) return;
 
-    return {
-      amount,
-      balance,
-      allowance,
-      willRequireApproval: allowance < amount,
-    };
-  };
-
-  const willRequireBuyInApproval = async (buyIn) => (
-    (await getBuyInApprovalState(buyIn)).willRequireApproval
-  );
-
-  const ensureBuyInAllowance = async (buyIn) => {
-    const { amount, willRequireApproval } = await getBuyInApprovalState(buyIn);
-    if (!willRequireApproval) return;
-
-    const args = [LOBBY_CONTRACT_ADDRESS, amount];
-    const txRequest = {
-      address: CHIPS_CONTRACT_ADDRESS,
+    const hash = await writeContractFromOperator({
+      operatorPrivateKey,
+      contract: CHIPS_CONTRACT_ADDRESS,
       abi: CHIPS_ABI,
       functionName: 'approve',
-      args,
-      account: address,
-    };
-    const overrides = await getBufferedGasOverrides(publicPokerClient, txRequest);
-
-    const hash = await mutateAsync({
-      address: CHIPS_CONTRACT_ADDRESS,
-      abi: CHIPS_ABI,
-      functionName: 'approve',
-      args,
-      ...overrides,
+      args: [LOBBY_CONTRACT_ADDRESS, amount],
     });
-
     await publicPokerClient.waitForTransactionReceipt({ hash });
   };
 
-  return { ensureBuyInAllowance, getBuyInApprovalState, willRequireBuyInApproval };
+  return { ensureOperatorBuyInAllowance };
 }
