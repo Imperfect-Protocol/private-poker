@@ -23,6 +23,8 @@ const readCreatedTableSnapshot = (tableId) => {
   }
 };
 
+const formatSeatAddress = (address) => (address ? address.slice(2, 4).toUpperCase() : 'Peer');
+
 export default function TableClient({ tableId, lobbyId, initialTableData = null, initialIsSeated = null }) {
   const initialSnapshotRef = useRef(undefined);
   if (initialSnapshotRef.current === undefined) {
@@ -57,7 +59,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     });
   }, [addDebugMessage]);
 
-  const handleRtcMessage = useCallback((incoming) => {
+  const handleRtcMessage = useCallback((incoming, playerAddress) => {
     if (incoming.type === 'GAME_UPDATE') {
       tableRef.current?.setTableData((prev) => ({
         ...prev,
@@ -67,7 +69,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         },
       }));
     } else if (incoming.type === 'CHAT') {
-      addDebugMessage({ text: incoming.text, sender: 'Peer' });
+      addDebugMessage({ text: incoming.text, sender: formatSeatAddress(playerAddress) });
     }
   }, [addDebugMessage]);
 
@@ -75,15 +77,8 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     if (seatEvent.kind !== 'network') return;
     const networkEvent = seatEvent.event;
     if (networkEvent?.kind === 'message') {
-      handleRtcMessage(networkEvent.message);
+      handleRtcMessage(networkEvent.message, networkEvent.playerAddress);
       return;
-    }
-    if (networkEvent?.kind === 'network') {
-      addDebugMessage({
-        text: `Seat ${seatNo} ${networkEvent.state}`,
-        sender: 'RTC',
-        level: 'info',
-      });
     }
   }, [addDebugMessage, handleRtcMessage]);
 

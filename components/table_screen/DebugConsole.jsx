@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef } from 'react';
+
 export default function DebugConsole({
   tableId,
   messages = [],
@@ -6,6 +10,15 @@ export default function DebugConsole({
   onSubmit,
   onDealTest,
 }) {
+  const messageListRef = useRef(null);
+
+  useEffect(() => {
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+
+    messageList.scrollTop = messageList.scrollHeight;
+  }, [messages.length]);
+
   const getMessageClassName = (message) => {
     if (message.sender === 'Me') return 'text-cyan-400';
     if (message.sender === 'RTC') {
@@ -14,6 +27,26 @@ export default function DebugConsole({
       return 'text-sky-300';
     }
     return 'text-teal-500';
+  };
+
+  const parseRtcMessage = (text = '') => {
+    const meMatch = text.match(/^\[Me\]:\s+(.*)$/);
+    if (meMatch) {
+      return {
+        peer: 'Me',
+        separator: ':',
+        body: meMatch[1],
+      };
+    }
+
+    const match = text.match(/^([A-F0-9?]{2})\s+(.*)$/);
+    if (!match) return null;
+
+    return {
+      peer: match[1],
+      separator: '',
+      body: match[2],
+    };
   };
 
   return (
@@ -28,18 +61,27 @@ export default function DebugConsole({
       >
         Force Flop Deal (Broadcast)
       </button>
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
-        {messages.map((message, index) => (
-          <div key={index} className={`text-[11px] font-mono ${getMessageClassName(message)}`}>
-            {message.sender === 'RTC' ? (
-              message.text
-            ) : (
-              <>
-                <span className="opacity-50">[{message.sender}]:</span> {message.text}
-              </>
-            )}
-          </div>
-        ))}
+      <div ref={messageListRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
+        {messages.map((message, index) => {
+          const rtcMessage = message.sender === 'RTC' ? parseRtcMessage(message.text) : null;
+
+          return (
+            <div key={index} className={`text-[11px] font-mono ${getMessageClassName(message)}`}>
+              {rtcMessage ? (
+                <>
+                  <span className="text-cyan-400 opacity-80">[{rtcMessage.peer}]</span>{rtcMessage.separator}{' '}
+                  {rtcMessage.body}
+                </>
+              ) : message.sender === 'RTC' ? (
+                <>{message.text}</>
+              ) : (
+                <>
+                  <span className="opacity-50">[{message.sender}]:</span> {message.text}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <form onSubmit={onSubmit} className="p-2 bg-slate-950/50">

@@ -76,7 +76,7 @@ export default function FlowStepDialog({
               </div>
               <Slider
                 min={5}
-                max={20}
+                max={25}
                 step={1}
                 value={topUpFactor}
                 presets={[0, 25, 50, 75, 100]}
