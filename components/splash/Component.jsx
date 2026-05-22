@@ -9,7 +9,7 @@ export default function Splash() {
 
   useEffect(() => {
     const fadeTimer = setTimeout(() => setFadeSplash(true), 2000);
-    const redirectTimer = setTimeout(() => router.push('/main-lobby'), 2500);
+    const redirectTimer = setTimeout(() => router.push('/signin'), 2500);
 
     return () => {
       clearTimeout(fadeTimer);
