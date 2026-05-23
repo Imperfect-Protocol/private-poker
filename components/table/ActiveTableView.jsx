@@ -2,7 +2,12 @@
 
 import TableScreen from '@/components/table_screen/Component';
 
-export default function ActiveTableView({ table, debugConsole, children }) {
+export default function ActiveTableView({
+  table,
+  debugConsole,
+  actionBarProps = {},
+  children,
+}) {
   const currentSeat = table.currentSeat ?? {};
 
   return (
@@ -11,8 +16,8 @@ export default function ActiveTableView({ table, debugConsole, children }) {
       currentPlayerAddress={currentSeat.playerAddress}
       playerNetworkStates={table.playerNetworkStates}
       debugConsole={debugConsole}
-      showActionBar={table.tableData !== undefined}
-      actionBarProps={{}}
+      showActionBar={table.tableData !== undefined && actionBarProps.visible !== false}
+      actionBarProps={actionBarProps}
     >
       {children}
     </TableScreen>

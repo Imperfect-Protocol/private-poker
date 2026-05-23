@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTable } from '@/hooks/useTable';
+import { usePokerTable } from '@/hooks/usePokerTable';
 import ActiveTableView from '@/components/table/ActiveTableView';
 import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
 import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
@@ -25,16 +26,24 @@ const readCreatedTableSnapshot = (tableId) => {
 
 const formatSeatAddress = (address) => (address ? address.slice(2, 4).toUpperCase() : 'Peer');
 
-export default function TableClient({ tableId, lobbyId, initialTableData = null, initialIsSeated = null }) {
-  const initialSnapshotRef = useRef(undefined);
-  if (initialSnapshotRef.current === undefined) {
-    initialSnapshotRef.current = readCreatedTableSnapshot(tableId);
-  }
+const POKER_PROTOCOL_UI_STATES = new Set([
+  'Shuffling',
+  'UnmaskHoleCards',
+  'UnmaskCommunityCards',
+  'UnmaskShowdown',
+  'SubmitPublicKey',
+  'Finished',
+]);
 
-  const bootTableData = initialTableData ?? initialSnapshotRef.current?.tableData ?? null;
-  const bootIsSeated = initialIsSeated ?? initialSnapshotRef.current?.isSeated ?? null;
+export default function TableClient({ tableId, lobbyId, initialTableData = null, initialIsSeated = null }) {
+  const [initialSnapshot] = useState(() => readCreatedTableSnapshot(tableId));
+
+  const bootTableData = initialTableData ?? initialSnapshot?.tableData ?? null;
+  const bootIsSeated = initialIsSeated ?? initialSnapshot?.isSeated ?? null;
 
   const tableRef = useRef(null);
+  const pokerTableRef = useRef(null);
+  const lastProtocolActionKeyRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [showBuyInDialog, setShowBuyInDialog] = useState(true);
@@ -60,6 +69,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   }, [addDebugMessage]);
 
   const handleRtcMessage = useCallback((incoming, playerAddress) => {
+    if (incoming?.type === 'POKER_ACTION') {
+      pokerTableRef.current?.handleNetworkMessage(incoming);
+      return;
+    }
+
     if (incoming.type === 'GAME_UPDATE') {
       tableRef.current?.setTableData((prev) => ({
         ...prev,
@@ -80,7 +94,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
       handleRtcMessage(networkEvent.message, networkEvent.playerAddress);
       return;
     }
-  }, [addDebugMessage, handleRtcMessage]);
+  }, [handleRtcMessage]);
 
   const handleOperatorTopUp = useCallback(({ operator, requiredAmount }) => {
     return new Promise((resolve) => {
@@ -105,7 +119,65 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     networkEnabled,
     onOperatorTopUp: handleOperatorTopUp,
   });
-  tableRef.current = table;
+
+  const handlePokerGameUpdate = useCallback((currentHand) => {
+    table.setTableData((prev) => {
+      const nextHand = {
+        ...prev.current_hand,
+        ...currentHand,
+      };
+      const isSame = Object.keys(nextHand).every((key) => nextHand[key] === prev.current_hand?.[key])
+        && Object.keys(prev.current_hand ?? {}).every((key) => nextHand[key] === prev.current_hand?.[key]);
+
+      if (isSame) return prev;
+
+      return {
+        ...prev,
+        current_hand: nextHand,
+      };
+    });
+  }, [table]);
+
+  const handlePokerLog = useCallback((line) => {
+    addDebugMessage({ text: line, sender: 'Game' });
+  }, [addDebugMessage]);
+
+  const pokerTable = usePokerTable({
+    table,
+    networkSnapshot: table.networkSnapshot,
+    publishMessage: table.publishMessage,
+    prepareNetworkSession: table.prepareNetworkSession,
+    onGameUpdate: handlePokerGameUpdate,
+    onLog: handlePokerLog,
+  });
+
+  const currentGameState = pokerTable.currentGameState;
+  const submitProtocolAction = pokerTable.submitProtocolAction;
+
+  useEffect(() => {
+    if (!currentGameState) return;
+    if (currentGameState.seat !== table.currentSeat?.seatNo) return;
+    if (!POKER_PROTOCOL_UI_STATES.has(currentGameState.state)) return;
+
+    const actionKey = [
+      currentGameState.state,
+      currentGameState.seat,
+      currentGameState.pot,
+      currentGameState.minBet,
+      currentGameState.maxBet,
+      currentGameState.step,
+    ].join(':');
+    if (lastProtocolActionKeyRef.current === actionKey) return;
+    lastProtocolActionKeyRef.current = actionKey;
+
+    submitProtocolAction();
+  }, [currentGameState, submitProtocolAction, table.currentSeat?.seatNo]);
+
+  useEffect(() => {
+    tableRef.current = table;
+    pokerTableRef.current = pokerTable;
+  }, [pokerTable, table]);
+
   const currentPlayerAddress = table.currentSeat?.playerAddress ?? null;
 
   useEffect(() => {
@@ -194,6 +266,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         onSubmit: handleSend,
         onDealTest: handleDealTest,
       }}
+      actionBarProps={pokerTable.actionBarProps}
     >
       {!table.hasJoinedTable && buyInDialogReady && (
         <BuyInDialog
