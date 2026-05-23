@@ -22,6 +22,7 @@ import {
   POKER_HOLDEM_ROUNDS,
   PokerTable,
 } from '@/lib/crum_pkr';
+import { holdemRank, holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
 const POKER_ACTION_MESSAGE = 'POKER_ACTION';
 
@@ -29,7 +30,15 @@ function shallowEqual(left, right) {
   const leftKeys = Object.keys(left ?? {});
   const rightKeys = Object.keys(right ?? {});
   if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key) => left[key] === right[key]);
+  return leftKeys.every((key) => {
+    const leftValue = left[key];
+    const rightValue = right[key];
+    if (leftValue === rightValue) return true;
+    if (typeof leftValue === 'object' && typeof rightValue === 'object') {
+      return JSON.stringify(leftValue) === JSON.stringify(rightValue);
+    }
+    return false;
+  });
 }
 
 function createCryptoRng() {
@@ -142,6 +151,47 @@ function cardsToCompact(cards) {
     .join('');
 }
 
+function cardsToStrings(cards) {
+  return cards
+    .filter(Boolean)
+    .map((card) => card.toString());
+}
+
+function safeCallAmount(hand, player) {
+  try {
+    return hand.get_call_amount_required(player);
+  } catch {
+    return 0;
+  }
+}
+
+function safeChipsRemaining(hand, player) {
+  try {
+    return hand.get_chips_remaining(player);
+  } catch {
+    return 0;
+  }
+}
+
+function chipStacks(hand, winner = null, payout = 0) {
+  const stacks = [...(hand?.betting_state?.player_chips ?? [])];
+  if (winner != null && stacks[winner] != null) {
+    stacks[winner] += payout;
+  }
+  return stacks;
+}
+
+function chipStackSize(chips) {
+  if (chips <= INITIAL_CHIPS * 0.5) return 'Small';
+  if (chips <= INITIAL_CHIPS) return 'Medium';
+  if (chips <= INITIAL_CHIPS * 1.5) return 'Big';
+  return 'ExtraLarge';
+}
+
+function chipStackSizes(stacks) {
+  return stacks.map(chipStackSize);
+}
+
 function stateLabel(hand) {
   const state = hand?.get_current_state().to_enum();
   if (!state) return 'Waiting';
@@ -174,6 +224,8 @@ function tableViewPatch(clientState, signingKey) {
   if (!hand) return {};
 
   const deck = hand.get_poker_deck();
+  const handState = hand.get_current_state();
+  const pokerState = handState.to_enum();
   const communityCards = [];
   for (let round = 0; round < POKER_HOLDEM_ROUNDS; round += 1) {
     const cards = hand.get_community_cards(round);
@@ -193,16 +245,33 @@ function tableViewPatch(clientState, signingKey) {
     playerCards = '';
   }
 
+  const playerCardsBySeat = {};
+  if (
+    pokerState.type === 'UnmaskShowdown'
+    || pokerState.type === 'SubmitPublicKey'
+    || pokerState.type === 'Finished'
+  ) {
+    hand.get_player_cards().forEach((cardSet, seat) => {
+      try {
+        const compact = cardsToCompact(deck.unmasked_cards(cardSet));
+        if (compact) playerCardsBySeat[seat] = compact;
+      } catch {
+        // Cards for this seat are still masked locally.
+      }
+    });
+  }
+
   return {
-    current_player: hand.get_current_state().get_current_player().toString(),
-    current_state: hand.get_current_state().to_tuple().join(':'),
+    current_player: handState.get_current_player().toString(),
+    current_state: handState.to_tuple().join(':'),
     state_label: stateLabel(hand),
     current_pot: hand.betting_state?.pot?.toString?.() ?? '0',
-    min_bet: hand.get_call_amount_required(clientState.player_index),
-    max_bet: hand.get_chips_remaining(clientState.player_index),
+    min_bet: safeCallAmount(hand, clientState.player_index),
+    max_bet: safeChipsRemaining(hand, clientState.player_index),
     bet_step: hand.get_small_blind(),
     community_cards: cardsToCompact(communityCards),
     player_cards: playerCards,
+    player_cards_by_seat: playerCardsBySeat,
   };
 }
 
@@ -239,20 +308,102 @@ function currentGameStateFrom(game) {
       minBet: 0,
       maxBet: 0,
       step: 0,
+      chipStacks: [],
+      chipStackSizes: [],
+      payout: null,
     };
   }
 
   const handState = hand.get_current_state();
   const pokerState = handState.to_enum();
   const seat = 'player' in pokerState ? pokerState.player : handState.get_current_player();
+  const deck = hand.get_poker_deck();
+  const isShowdownState = pokerState.type === 'UnmaskShowdown'
+    || pokerState.type === 'SubmitPublicKey'
+    || pokerState.type === 'Finished';
+
+  if (isShowdownState) {
+    const playerCards = hand.get_player_cards().map((cardSet) => {
+      try {
+        return cardsToStrings(deck.unmasked_cards(cardSet));
+      } catch {
+        return [];
+      }
+    });
+    const communityCards = [];
+    for (let round = 0; round < POKER_HOLDEM_ROUNDS; round += 1) {
+      const cards = hand.get_community_cards(round);
+      if (cards) {
+        communityCards.push(...cardsToStrings(deck.unmasked_cards(cards)));
+      }
+    }
+    const activePlayers = hand.betting_state?.active_players ?? [];
+    const payoutAmount = Number(hand.betting_state?.pot?.toString?.() ?? 0);
+    const foldedWinner = activePlayers.filter(Boolean).length === 1
+      ? activePlayers.findIndex(Boolean)
+      : null;
+    const showdown = foldedWinner == null
+      ? holdemShowdown(playerCards, communityCards, activePlayers)
+      : {
+        hands: playerCards.map((cards) => ({
+          cards,
+          rank: cards.length === 2 && communityCards.length >= 5
+            ? holdemRank([...cards, ...communityCards])
+            : null,
+        })),
+        winner: foldedWinner,
+      };
+    const hands = showdown.hands.map((showdownHand, index) => ({
+      ...showdownHand,
+      isWinner: showdown.winner === index,
+    }));
+    const playerWon = showdown.winner != null && showdown.winner === game.clientState.player_index;
+    const stacks = chipStacks(hand, showdown.winner, showdown.winner == null ? 0 : payoutAmount);
+
+    return {
+      state: 'Showdown',
+      seat,
+      pot: showdown.winner == null ? payoutAmount : 0,
+      minBet: safeCallAmount(hand, game.clientState.player_index),
+      maxBet: safeChipsRemaining(hand, game.clientState.player_index),
+      step: hand.get_small_blind(),
+      chipStacks: stacks,
+      chipStackSizes: chipStackSizes(stacks),
+      hands,
+      winner: showdown.winner,
+      resultText: showdown.winner == null ? null : playerWon ? 'You Win' : 'You Lose',
+      resultRank: showdown.winner == null ? null : hands[showdown.winner]?.rank ?? null,
+      payout: showdown.winner == null
+        ? null
+        : {
+          amount: payoutAmount,
+          winner: showdown.winner,
+          icon: 'coins',
+        },
+    };
+  }
 
   return {
     state: gameStateName(pokerState),
     seat,
     pot: Number(hand.betting_state?.pot?.toString?.() ?? 0),
-    minBet: hand.get_call_amount_required(game.clientState.player_index),
-    maxBet: hand.get_chips_remaining(game.clientState.player_index),
+    minBet: safeCallAmount(hand, game.clientState.player_index),
+    maxBet: safeChipsRemaining(hand, game.clientState.player_index),
     step: hand.get_small_blind(),
+    chipStacks: chipStacks(hand),
+    chipStackSizes: chipStackSizes(chipStacks(hand)),
+    payout: null,
+  };
+}
+
+function protocolActionStateFrom(game) {
+  const hand = game?.clientState.current_hand();
+  if (!game || !hand) return null;
+  const pokerState = hand.get_current_state().to_enum();
+  const seat = 'player' in pokerState ? pokerState.player : hand.get_current_state().get_current_player();
+  return {
+    state: gameStateName(pokerState),
+    seat,
   };
 }
 
@@ -285,6 +436,7 @@ export function usePokerTable({
       maxBet: 0,
       step: 0,
     },
+    protocolActionState: null,
     viewPatch: {},
   });
   const [gameMessages, setGameMessages] = useState([]);
@@ -340,6 +492,7 @@ export function usePokerTable({
     const waitingForBlind = waitingForSmallBlind || waitingForBigBlind;
     const blindAmount = waitingForBigBlind ? hand.get_big_blind() : hand.get_small_blind();
     const currentGameState = currentGameStateFrom(game);
+    const protocolActionState = protocolActionStateFrom(game);
     const stableCurrentGameState = shallowEqual(
       lastSnapshotRef.current.currentGameState,
       currentGameState,
@@ -370,6 +523,7 @@ export function usePokerTable({
       hideCall: waitingForBlind,
       hideFold: waitingForBlind,
       currentGameState: stableCurrentGameState,
+      protocolActionState,
       viewPatch: stablePatch,
     };
 

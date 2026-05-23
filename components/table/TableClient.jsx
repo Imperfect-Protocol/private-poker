@@ -138,12 +138,16 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         current_hand: {
           ...table.tableData.current_hand,
           ...pokerTableState.viewPatch,
+          current_pot: pokerTableState.currentGameState?.pot?.toString?.()
+            ?? pokerTableState.viewPatch?.current_pot
+            ?? table.tableData.current_hand?.current_pot,
         },
       }
       : table.tableData,
-  }), [pokerTableState.viewPatch, table]);
+  }), [pokerTableState.currentGameState, pokerTableState.viewPatch, table]);
 
   const currentGameState = pokerTableState.currentGameState;
+  const protocolActionState = pokerTableState.protocolActionState;
   const submitProtocolAction = pokerTableActions.submitProtocolAction;
   const debugMessages = useMemo(() => (
     [...messages, ...pokerTableState.gameMessages].slice(-160)
@@ -151,13 +155,13 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const p2pEstablished = table.networkSnapshot?.status === 'connected';
 
   useEffect(() => {
-    if (!currentGameState) return;
-    if (currentGameState.seat !== table.currentSeat?.seatNo) return;
-    if (!POKER_PROTOCOL_UI_STATES.has(currentGameState.state)) return;
+    if (!protocolActionState) return;
+    if (protocolActionState.seat !== table.currentSeat?.seatNo) return;
+    if (!POKER_PROTOCOL_UI_STATES.has(protocolActionState.state)) return;
 
     const actionKey = [
-      currentGameState.state,
-      currentGameState.seat,
+      protocolActionState.state,
+      protocolActionState.seat,
       currentGameState.pot,
       currentGameState.minBet,
       currentGameState.maxBet,
@@ -167,7 +171,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     lastProtocolActionKeyRef.current = actionKey;
 
     submitProtocolAction();
-  }, [currentGameState, submitProtocolAction, table.currentSeat?.seatNo]);
+  }, [currentGameState, protocolActionState, submitProtocolAction, table.currentSeat?.seatNo]);
 
   useEffect(() => {
     tableRef.current = table;
@@ -263,6 +267,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         onDealTest: handleDealTest,
       }}
       actionBarProps={pokerTableState.actionBarProps}
+      gameState={currentGameState}
     >
       {!table.hasJoinedTable && buyInDialogReady && (
         <BuyInDialog

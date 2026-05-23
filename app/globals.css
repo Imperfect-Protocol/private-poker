@@ -35,3 +35,18 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #2dd4bf; /* Matches teal-400 */
 }
+
+@keyframes payoutPulse {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -105%) scale(1);
+  }
+}

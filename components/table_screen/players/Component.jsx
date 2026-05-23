@@ -54,10 +54,12 @@ export default function TablePlayers({
   tableData,
   currentPlayerAddress,
   playerNetworkStates = {},
+  gameState = null,
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
   const heroCards = parseCards(tableData?.current_hand?.player_cards);
+  const playerCardsBySeat = tableData?.current_hand?.player_cards_by_seat ?? {};
 
   return seatedPlayers.map((player, index) => {
     const isEmptySeat = Boolean(player.isEmptySeat);
@@ -67,6 +69,16 @@ export default function TablePlayers({
       : playerNetworkStates[player.playerAddress?.toLowerCase()] ?? 'sitting-out';
     const originalIndex = isEmptySeat ? -1 : tableData.players.findIndex((candidate) => candidate.playerAddress === player.playerAddress);
     const isTheirTurn = !isEmptySeat && tableData.current_hand?.current_player === originalIndex.toString();
+    const seatCards = playerCardsBySeat[originalIndex] != null
+      ? parseCards(playerCardsBySeat[originalIndex])
+      : isMe
+        ? heroCards
+        : [];
+    const showdownHand = gameState?.hands?.[originalIndex] ?? null;
+    const handRank = showdownHand?.rank ?? null;
+    const isWinner = Boolean(showdownHand?.isWinner);
+    const chipStack = gameState?.chipStacks?.[originalIndex] ?? player.chips ?? null;
+    const chipStackSize = gameState?.chipStackSizes?.[originalIndex] ?? null;
 
     return (
       <Player
@@ -77,7 +89,11 @@ export default function TablePlayers({
         isEmptySeat={isEmptySeat}
         isTheirTurn={isTheirTurn}
         networkState={networkState}
-        heroCards={heroCards}
+        seatCards={seatCards}
+        handRank={handRank}
+        isWinner={isWinner}
+        chipStack={chipStack}
+        chipStackSize={chipStackSize}
       />
     );
   });

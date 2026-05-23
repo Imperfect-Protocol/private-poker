@@ -6,6 +6,7 @@ export default function ActiveTableView({
   table,
   debugConsole,
   actionBarProps = {},
+  gameState = null,
   children,
 }) {
   const currentSeat = table.currentSeat ?? {};
@@ -16,8 +17,10 @@ export default function ActiveTableView({
       currentPlayerAddress={currentSeat.playerAddress}
       playerNetworkStates={table.playerNetworkStates}
       debugConsole={debugConsole}
-      showActionBar={table.tableData !== undefined && actionBarProps.visible !== false}
+      showActionBar={table.tableData !== undefined && actionBarProps.visible === true}
       actionBarProps={actionBarProps}
+      gameState={gameState}
+      currentSeatNo={currentSeat.seatNo}
     >
       {children}
     </TableScreen>
