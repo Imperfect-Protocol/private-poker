@@ -12,13 +12,15 @@ export default function BetActionButtons({
   onCall,
   onRaise,
 }) {
+  const callLabel = callAmount === 0 ? 'Check' : `Call $${callAmount}`;
+
   return (
     <div className="flex justify-center gap-3 w-full">
       {!hideFold && (
         <BetActionButton kind="fold" disabled={disabled} onClick={onFold}>Fold</BetActionButton>
       )}
       {!hideCall && (
-        <BetActionButton kind="call" disabled={disabled} onClick={onCall}>Call ${callAmount}</BetActionButton>
+        <BetActionButton kind="call" disabled={disabled} onClick={onCall}>{callLabel}</BetActionButton>
       )}
       <BetActionButton kind="raise" disabled={disabled} onClick={onRaise}>
         <span className="text-[10px] font-black uppercase tracking-widest opacity-80 group-hover:opacity-100 mb-0.5">{primaryLabel}</span>

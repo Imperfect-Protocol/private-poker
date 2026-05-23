@@ -5,8 +5,12 @@ import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 import Slider from '@/components/slider/Component';
 import { OPERATOR_GAS_MAX_TOPUP } from '@/lib/constants';
 
-function formatWei(value) {
-  return BigInt(value ?? 0n).toString();
+function formatGwei(value) {
+  const wei = BigInt(value ?? 0n);
+  const roundedMilliGwei = (wei + 500_000n) / 1_000_000n;
+  const whole = roundedMilliGwei / 1_000n;
+  const fraction = (roundedMilliGwei % 1_000n).toString().padStart(3, '0');
+  return `${whole}.${fraction}`;
 }
 
 export default function TopUpOperatorGasDialog({
@@ -43,11 +47,11 @@ export default function TopUpOperatorGasDialog({
           </div>
           <div className="flex items-center justify-between gap-4">
             <span className="text-[10px] uppercase tracking-widest text-slate-500">Required</span>
-            <span className="text-xs text-slate-300">{formatWei(requiredAmount)} Wei</span>
+            <span className="text-xs text-slate-300">{formatGwei(requiredAmount)} GWei</span>
           </div>
           <div className="flex items-center justify-between gap-4">
             <span className="text-[10px] uppercase tracking-widest text-slate-500">Top-Up</span>
-            <span className="text-sm font-black text-teal-300">{formatWei(topUpAmount)} Wei</span>
+            <span className="text-sm font-black text-teal-300">{formatGwei(topUpAmount)} GWei</span>
           </div>
         </div>
 

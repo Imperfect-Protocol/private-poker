@@ -20,6 +20,9 @@ export default function Component({
   onRaise,
 }) {
   const [betAmount, setBetAmount] = useState(minBet);
+  const sliderMin = Math.min(minBet, maxBet);
+  const sliderMax = Math.max(maxBet, sliderMin);
+  const clampedBetAmount = Math.max(sliderMin, Math.min(betAmount, sliderMax));
 
   const presets = [0, 25, 50, 75, 100];
 
@@ -30,17 +33,17 @@ export default function Component({
       <div className="w-full max-w-xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl p-3 shadow-2xl flex flex-col gap-4 pointer-events-auto">
 
         <BetRaiseSlider
-          minBet={minBet}
-          maxBet={maxBet}
+          minBet={sliderMin}
+          maxBet={sliderMax}
           step={step}
-          betAmount={betAmount}
+          betAmount={clampedBetAmount}
           presets={presets}
           disabled={sliderDisabled}
           onChange={setBetAmount}
         />
 
         <BetActionButtons
-          betAmount={betAmount}
+          betAmount={clampedBetAmount}
           callAmount={callAmount}
           disabled={disabled}
           hideCall={hideCall}
@@ -49,7 +52,7 @@ export default function Component({
           primaryAmount={primaryAmount}
           onFold={onFold}
           onCall={onCall}
-          onRaise={() => onRaise?.(betAmount)}
+          onRaise={() => onRaise?.(clampedBetAmount)}
         />
 
       </div>

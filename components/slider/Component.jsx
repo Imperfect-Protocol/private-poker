@@ -2,6 +2,29 @@
 
 import { Component as ReactComponent } from 'react';
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function nearestSteppedValue(rawValue, min, max, step) {
+  if (max <= min) return min;
+  if (!step || step <= 1) return clamp(rawValue, min, max);
+
+  const stepIndex = (rawValue - min) / step;
+  const lower = min + Math.floor(stepIndex) * step;
+  const upper = min + Math.ceil(stepIndex) * step;
+  const candidates = [min, max, lower, upper]
+    .map((value) => clamp(value, min, max));
+
+  return candidates.reduce((nearest, candidate) => {
+    const currentDistance = Math.abs(rawValue - nearest);
+    const candidateDistance = Math.abs(rawValue - candidate);
+    if (candidateDistance < currentDistance) return candidate;
+    if (candidateDistance === currentDistance) return Math.max(nearest, candidate);
+    return nearest;
+  }, candidates[0]);
+}
+
 export default class Slider extends ReactComponent {
   getPercentFill() {
     const { min = 0, max = 100, value = min } = this.props;
@@ -11,14 +34,18 @@ export default class Slider extends ReactComponent {
   }
 
   handleChange = (event) => {
-    this.props.onChange?.(Number(event.target.value));
+    const {
+      min = 0,
+      max = 100,
+      step = 1,
+    } = this.props;
+    this.props.onChange?.(nearestSteppedValue(Number(event.target.value), min, max, step));
   };
 
   render() {
     const {
       min = 0,
       max = 100,
-      step = 1,
       value = min,
       presets = [0, 25, 50, 75, 100],
       ariaLabel = 'Slider',
@@ -66,7 +93,7 @@ export default class Slider extends ReactComponent {
           type="range"
           min={min}
           max={max}
-          step={step}
+          step={1}
           value={value}
           disabled={disabled}
           onChange={this.handleChange}
