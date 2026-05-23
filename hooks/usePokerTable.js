@@ -195,7 +195,7 @@ function tableViewPatch(clientState, signingKey) {
 
   return {
     current_player: hand.get_current_state().get_current_player().toString(),
-    current_state: hand.get_current_state().to_tuple(),
+    current_state: hand.get_current_state().to_tuple().join(':'),
     state_label: stateLabel(hand),
     current_pot: hand.betting_state?.pot?.toString?.() ?? '0',
     min_bet: hand.get_call_amount_required(clientState.player_index),
@@ -206,10 +206,26 @@ function tableViewPatch(clientState, signingKey) {
   };
 }
 
+function streetName(round) {
+  switch (round) {
+    case 0:
+      return 'PreFlop';
+    case 1:
+      return 'Flop';
+    case 2:
+      return 'Turn';
+    case 3:
+      return 'River';
+    default:
+      return 'UnknownStreet';
+  }
+}
+
 function gameStateName(pokerState) {
   if (!pokerState) return 'Waiting';
   if (pokerState.type === 'Shuffle') return 'Shuffling';
-  if (pokerState.type === 'Bet') return 'PreFlop';
+  if (pokerState.type === 'Bet') return streetName(pokerState.round);
+  if (pokerState.type === 'UnmaskCommunityCards') return `Unmask${streetName(pokerState.round)}`;
   return pokerState.type;
 }
 
@@ -245,8 +261,6 @@ export function usePokerTable({
   networkSnapshot,
   publishMessage,
   prepareNetworkSession,
-  onGameUpdate,
-  onLog,
 } = {}) {
   const [snapshot, setSnapshot] = useState({
     started: false,
@@ -271,25 +285,29 @@ export function usePokerTable({
       maxBet: 0,
       step: 0,
     },
+    viewPatch: {},
   });
+  const [gameMessages, setGameMessages] = useState([]);
   const gameRef = useRef(null);
-  const onGameUpdateRef = useRef(onGameUpdate);
-  const onLogRef = useRef(onLog);
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
 
-  onGameUpdateRef.current = onGameUpdate;
-  onLogRef.current = onLog;
+  const appendGameLog = useCallback((line) => {
+    setGameMessages((prev) => [...prev, { text: line, sender: 'Game' }].slice(-160));
+  }, []);
+
+  const tableId = table?.tableData?.id;
+  const tableMaxSeats = table?.tableData?.maxSeats;
+  const currentSeatNo = table?.currentSeat?.seatNo;
 
   const resetGame = useCallback(() => {
-    const numPlayers = Number(table?.tableData?.maxSeats || 0);
-    const seatNo = table?.currentSeat?.seatNo;
-    if (!numPlayers || seatNo == null) return null;
+    const numPlayers = Number(tableMaxSeats || 0);
+    if (!numPlayers || currentSeatNo == null) return null;
 
     const pokerTable = makePokerTable(numPlayers);
     const clientState = PokerClientState.new(
-      seatNo,
-      Number(table.tableData.id),
+      currentSeatNo,
+      Number(tableId),
       HAND_ID,
       pokerTable,
     );
@@ -301,7 +319,7 @@ export function usePokerTable({
       seenFinished: false,
     };
     return gameRef.current;
-  }, [table?.currentSeat?.seatNo, table?.tableData?.id, table?.tableData?.maxSeats]);
+  }, [currentSeatNo, tableId, tableMaxSeats]);
 
   useEffect(() => {
     resetGame();
@@ -329,10 +347,8 @@ export function usePokerTable({
       ? lastSnapshotRef.current.currentGameState
       : currentGameState;
 
-    if (!shallowEqual(lastPatchRef.current, patch)) {
-      lastPatchRef.current = patch;
-      onGameUpdateRef.current?.(patch);
-    }
+    const stablePatch = shallowEqual(lastPatchRef.current, patch) ? lastPatchRef.current : patch;
+    lastPatchRef.current = stablePatch;
 
     const nextSnapshot = {
       started: true,
@@ -340,11 +356,11 @@ export function usePokerTable({
       waitingForBet,
       waitingForBlind,
       canAct: isMyTurn,
-      stateLabel: patch.state_label,
-      minBet: Number(patch.min_bet ?? SMALL_BLIND),
-      maxBet: Number(patch.max_bet ?? INITIAL_CHIPS),
-      step: Number(patch.bet_step ?? SMALL_BLIND),
-      actionAmount: waitingForBlind ? blindAmount : Number(patch.min_bet ?? SMALL_BLIND),
+      stateLabel: stablePatch.state_label,
+      minBet: Number(stablePatch.min_bet ?? SMALL_BLIND),
+      maxBet: Number(stablePatch.max_bet ?? INITIAL_CHIPS),
+      step: Number(stablePatch.bet_step ?? SMALL_BLIND),
+      actionAmount: waitingForBlind ? blindAmount : Number(stablePatch.min_bet ?? SMALL_BLIND),
       primaryLabel: waitingForSmallBlind
         ? 'Small Blind'
         : waitingForBigBlind
@@ -354,6 +370,7 @@ export function usePokerTable({
       hideCall: waitingForBlind,
       hideFold: waitingForBlind,
       currentGameState: stableCurrentGameState,
+      viewPatch: stablePatch,
     };
 
     if (!shallowEqual(lastSnapshotRef.current, nextSnapshot)) {
@@ -368,9 +385,14 @@ export function usePokerTable({
     if (game.signingKey && game.publicKey) return game;
 
     const keys = await prepareNetworkSession();
-    game.signingKey = make_signing_key_from_seed(hexToBytes(keys.privateKey));
-    game.publicKey = make_public_key_from_signing_key(game.signingKey);
-    return game;
+    const signingKey = make_signing_key_from_seed(hexToBytes(keys.privateKey));
+    const nextGame = {
+      ...game,
+      signingKey,
+      publicKey: make_public_key_from_signing_key(signingKey),
+    };
+    gameRef.current = nextGame;
+    return nextGame;
   }, [prepareNetworkSession, resetGame]);
 
   const publishWire = useCallback((wire) => {
@@ -387,10 +409,10 @@ export function usePokerTable({
     const envelope = game.clientState.submit_local_action(action);
     const wire = envelope.to_wire(logLines);
     publishWire(wire);
-    logLines.forEach((line) => onLogRef.current?.(line));
+    logLines.forEach(appendGameLog);
     updateView();
     return wire;
-  }, [publishWire, updateView]);
+  }, [appendGameLog, publishWire, updateView]);
 
   const buildAutomaticAction = useCallback((game) => {
     const hand = game.clientState.current_hand();
@@ -473,7 +495,7 @@ export function usePokerTable({
     if (handState.current_state === POKER_HAND_STATE_FINISHED) {
       if (!game.seenFinished) {
         game.seenFinished = true;
-        final_lines(game.clientState.table).forEach((line) => onLogRef.current?.(line));
+        final_lines(game.clientState.table).forEach(appendGameLog);
       }
       updateView();
       return null;
@@ -491,7 +513,7 @@ export function usePokerTable({
     const built = buildAutomaticAction(game);
     if (!built) return null;
     return submitAction(built.action, built.logLines);
-  }, [buildAutomaticAction, ensureKeys, submitAction, updateView]);
+  }, [appendGameLog, buildAutomaticAction, ensureKeys, submitAction, updateView]);
 
   const handleNetworkMessage = useCallback(async (message) => {
     if (message?.type !== POKER_ACTION_MESSAGE) return false;
@@ -502,12 +524,12 @@ export function usePokerTable({
     const envelope = wire.to_envelope();
     const applied = game.clientState.apply_envelope(envelope);
     if (applied) {
-      wire.log_lines.forEach((line) => onLogRef.current?.(line));
+      wire.log_lines.forEach(appendGameLog);
       publishMessage(message);
       updateView();
     }
     return true;
-  }, [ensureKeys, publishMessage, updateView]);
+  }, [appendGameLog, ensureKeys, publishMessage, updateView]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
@@ -587,11 +609,17 @@ export function usePokerTable({
     submitBlind,
   ]);
 
-  return {
+  const pokerTableState = useMemo(() => ({
     ...snapshot,
+    gameMessages,
+    actionBarProps,
+  }), [actionBarProps, gameMessages, snapshot]);
+
+  const pokerTableActions = useMemo(() => ({
     handleNetworkMessage,
     submitProtocolAction,
     submitBet,
-    actionBarProps,
-  };
+  }), [handleNetworkMessage, submitBet, submitProtocolAction]);
+
+  return [pokerTableState, pokerTableActions];
 }

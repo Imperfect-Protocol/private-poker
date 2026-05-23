@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTable } from '@/hooks/useTable';
 import { usePokerTable } from '@/hooks/usePokerTable';
 import ActiveTableView from '@/components/table/ActiveTableView';
@@ -30,6 +30,9 @@ const POKER_PROTOCOL_UI_STATES = new Set([
   'Shuffling',
   'UnmaskHoleCards',
   'UnmaskCommunityCards',
+  'UnmaskFlop',
+  'UnmaskTurn',
+  'UnmaskRiver',
   'UnmaskShowdown',
   'SubmitPublicKey',
   'Finished',
@@ -120,39 +123,32 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     onOperatorTopUp: handleOperatorTopUp,
   });
 
-  const handlePokerGameUpdate = useCallback((currentHand) => {
-    table.setTableData((prev) => {
-      const nextHand = {
-        ...prev.current_hand,
-        ...currentHand,
-      };
-      const isSame = Object.keys(nextHand).every((key) => nextHand[key] === prev.current_hand?.[key])
-        && Object.keys(prev.current_hand ?? {}).every((key) => nextHand[key] === prev.current_hand?.[key]);
-
-      if (isSame) return prev;
-
-      return {
-        ...prev,
-        current_hand: nextHand,
-      };
-    });
-  }, [table]);
-
-  const handlePokerLog = useCallback((line) => {
-    addDebugMessage({ text: line, sender: 'Game' });
-  }, [addDebugMessage]);
-
-  const pokerTable = usePokerTable({
+  const [pokerTableState, pokerTableActions] = usePokerTable({
     table,
     networkSnapshot: table.networkSnapshot,
     publishMessage: table.publishMessage,
     prepareNetworkSession: table.prepareNetworkSession,
-    onGameUpdate: handlePokerGameUpdate,
-    onLog: handlePokerLog,
   });
 
-  const currentGameState = pokerTable.currentGameState;
-  const submitProtocolAction = pokerTable.submitProtocolAction;
+  const displayTable = useMemo(() => ({
+    ...table,
+    tableData: table.tableData
+      ? {
+        ...table.tableData,
+        current_hand: {
+          ...table.tableData.current_hand,
+          ...pokerTableState.viewPatch,
+        },
+      }
+      : table.tableData,
+  }), [pokerTableState.viewPatch, table]);
+
+  const currentGameState = pokerTableState.currentGameState;
+  const submitProtocolAction = pokerTableActions.submitProtocolAction;
+  const debugMessages = useMemo(() => (
+    [...messages, ...pokerTableState.gameMessages].slice(-160)
+  ), [messages, pokerTableState.gameMessages]);
+  const p2pEstablished = table.networkSnapshot?.status === 'connected';
 
   useEffect(() => {
     if (!currentGameState) return;
@@ -175,8 +171,8 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
   useEffect(() => {
     tableRef.current = table;
-    pokerTableRef.current = pokerTable;
-  }, [pokerTable, table]);
+    pokerTableRef.current = pokerTableActions;
+  }, [pokerTableActions, table]);
 
   const currentPlayerAddress = table.currentSeat?.playerAddress ?? null;
 
@@ -207,11 +203,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
   useEffect(() => {
     if (!table.hasJoinedTable || joinRequest || showReJoinDialog) return;
-    if (table.networkSnapshot?.status === 'connected') return;
+    if (p2pEstablished) return;
 
     setReJoinDismissed(false);
     setShowReJoinDialog(true);
-  }, [joinRequest, showReJoinDialog, table.hasJoinedTable, table.networkSnapshot?.status]);
+  }, [joinRequest, p2pEstablished, showReJoinDialog, table.hasJoinedTable]);
 
   if (table.isLoading || !table.tableData) {
     return (
@@ -257,16 +253,16 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
   return (
     <ActiveTableView
-      table={table}
+      table={displayTable}
       debugConsole={{
         tableId,
-        messages,
+        messages: debugMessages,
         input,
         onInputChange: setInput,
         onSubmit: handleSend,
         onDealTest: handleDealTest,
       }}
-      actionBarProps={pokerTable.actionBarProps}
+      actionBarProps={pokerTableState.actionBarProps}
     >
       {!table.hasJoinedTable && buyInDialogReady && (
         <BuyInDialog
@@ -294,7 +290,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         />
       )}
 
-      {table.hasJoinedTable && showReJoinDialog && !joinRequest && (
+      {table.hasJoinedTable && showReJoinDialog && !joinRequest && !p2pEstablished && (
         <ReJoinTableFlowDialog
           table={table}
           networkSnapshot={table.networkSnapshot}
