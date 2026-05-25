@@ -23,8 +23,9 @@ export default function TableScreen({
   const hasDimOverlay = Children.toArray(children).length > 0;
   const communityCards = parseCards(tableData?.current_hand?.community_cards);
   const showResult = Boolean(gameState?.resultText);
-  const showNextHandCountdown = showResult && Boolean(gameState?.canStartNextHand);
   const [nextHandCountdown, setNextHandCountdown] = useState(10);
+  const showNextHandCountdown = showResult && Boolean(gameState?.canStartNextHand);
+  const countdownText = `00:${String(nextHandCountdown).padStart(2, '0')}`;
   const countdownCompletedRef = useRef(false);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function TableScreen({
     <main className="min-h-screen bg-slate-950 p-4 md:px-4 md:py-4 text-white relative flex flex-col">
       <Title
         tableName={tableData.name}
+        rightText={showNextHandCountdown ? countdownText : null}
       />
 
       <div className="flex-1 flex items-center justify-center relative">
@@ -81,16 +83,6 @@ export default function TableScreen({
 
           {showResult && (
             <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-              {showNextHandCountdown && (
-                <div className="absolute right-4 top-4 rounded-lg border border-teal-300/30 bg-slate-950/85 px-4 py-3 text-right shadow-[0_0_24px_rgba(20,184,166,0.25)] backdrop-blur-xl">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-teal-200/80">
-                    Next Hand
-                  </p>
-                  <p className="font-mono text-3xl md:text-4xl font-black leading-none text-white">
-                    {nextHandCountdown}
-                  </p>
-                </div>
-              )}
               <div className="flex flex-col items-center gap-3">
                 <div className={`text-6xl md:text-8xl font-black uppercase tracking-widest italic drop-shadow-[0_0_35px_rgba(255,255,255,0.35)] ${gameState.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300'}`}>
                   {gameState.resultText}

@@ -10,10 +10,16 @@ export function parseCards(cardString) {
 }
 
 export function Card({ suit, rank, isHidden, size = "sm" }) {
-  const sizeClasses = size === "lg"
-    ? "w-12 h-16 md:w-16 md:h-24 text-lg md:text-xl"
-    : "w-8 h-12 text-xs";
-  const iconSize = size === "lg" ? "text-2xl md:text-3xl" : "text-lg";
+  const sizeClasses = {
+    lg: "w-12 h-16 md:w-16 md:h-24 text-lg md:text-xl",
+    md: "w-10 h-14 md:w-12 md:h-[4.5rem] text-sm md:text-base",
+    sm: "w-8 h-12 text-xs",
+  }[size] ?? "w-8 h-12 text-xs";
+  const iconSize = {
+    lg: "text-2xl md:text-3xl",
+    md: "text-xl md:text-2xl",
+    sm: "text-lg",
+  }[size] ?? "text-lg";
 
   if (isHidden) {
     return (

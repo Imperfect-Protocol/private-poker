@@ -17,13 +17,13 @@ export default function TablePlayer({
   chipStack = null,
   chipStackSize = null,
 }) {
-  const cardSize = isMe ? 'lg' : 'sm';
+  const cardSize = isMe ? 'lg' : 'md';
 
   return (
     <div className={`absolute ${positionClass} transition-all duration-700 ease-in-out z-20`}>
       <div className="flex flex-col items-center group relative">
         {!isEmptySeat && (
-          <div className={`absolute flex gap-1 z-0 ${isMe ? '-top-12 md:-top-16' : '-top-6'}`}>
+          <div className={`absolute flex gap-1 z-0 ${isMe ? '-top-12 md:-top-16' : '-top-[2.75rem] md:-top-[3.1rem]'}`}>
             {seatCards.length > 0 ? (
               seatCards.map((card, idx) => (
                 card

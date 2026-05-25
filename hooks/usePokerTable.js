@@ -30,8 +30,6 @@ import { holdemRank, holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
 const POKER_ACTION_MESSAGE = 'POKER_ACTION';
 const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
-const MIN_SEND_JITTER_MS = 100;
-const MAX_SEND_JITTER_MS = 500;
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
 
 function shallowEqual(left, right) {
@@ -47,10 +45,6 @@ function shallowEqual(left, right) {
     }
     return false;
   });
-}
-
-function randomSendJitter() {
-  return MIN_SEND_JITTER_MS + Math.floor(Math.random() * (MAX_SEND_JITTER_MS - MIN_SEND_JITTER_MS + 1));
 }
 
 function createCryptoRng() {
@@ -480,6 +474,14 @@ function currentActingPlayer(game) {
   return hand?.get_current_state().get_current_player() ?? null;
 }
 
+function isHumanActionState(handState) {
+  return [
+    POKER_HAND_STATE_BET,
+    POKER_HAND_STATE_SMALL_BLIND,
+    POKER_HAND_STATE_BIG_BLIND,
+  ].includes(handState?.current_state);
+}
+
 function actionSnapshotFromState({
   currentGameState,
   protocolActionState,
@@ -682,7 +684,7 @@ export function usePokerTable({
       type: POKER_GAME_MESSAGE,
       wire: encodeWire(wire),
     };
-    setTimeout(() => publishMessage(message), randomSendJitter());
+    publishMessage(message);
   }, [publishMessage]);
 
   const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game)) => {
@@ -691,13 +693,9 @@ export function usePokerTable({
       current_player: currentPlayer,
       reason: 'your turn not mine',
     });
-    const displayLines = [`Current player is Player ${currentPlayer + 1}`];
-    wire.log_lines = displayLines;
     publishWire(wire);
-    appendTraceLines(displayLines, game.clientState.player_index);
-    updateView();
     return wire;
-  }, [appendTraceLines, publishWire, updateView]);
+  }, [publishWire]);
 
   const submitAction = useCallback((action, logLines) => {
     const game = gameRef.current;
@@ -837,15 +835,7 @@ export function usePokerTable({
 
     const wire = decodeWire(message.wire);
     if (wire.nop) {
-      const applied = game.clientState.apply_nop_wire(wire);
-      if (applied) {
-        const displayLines = wire.log_lines?.length > 0
-          ? wire.log_lines
-          : [`Current player is Player ${Number(wire.nop.current_player) + 1}`];
-        appendTraceLines(displayLines, wire.from);
-        updateView({ force: true });
-
-      }
+      game.clientState.apply_nop_wire(wire);
       return true;
     }
 
@@ -857,15 +847,27 @@ export function usePokerTable({
         : eventDisplayLines(result?.events);
       appendTraceLines(displayLines, envelope.from);
       const hand = game.clientState.current_hand();
-      updateView({ force: true });
-      if (hand?.get_current_state().is_finished()) {
-        setTimeout(() => publishMessage(message), randomSendJitter());
+      const handState = hand?.get_current_state();
+      if (handState?.is_finished()) {
+        updateView({ force: true });
+        publishMessage(message);
         return true;
       }
 
+      if (handState?.get_current_player() !== game.clientState.player_index) {
+        submitNop(game, handState?.get_current_player());
+        return true;
+      }
+
+      if (!isHumanActionState(handState)) {
+        await submitProtocolAction();
+        return true;
+      }
+
+      updateView({ force: true });
     }
     return true;
-  }, [appendTraceLines, publishMessage, resetGame, updateView]);
+  }, [appendTraceLines, publishMessage, resetGame, submitNop, submitProtocolAction, updateView]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
