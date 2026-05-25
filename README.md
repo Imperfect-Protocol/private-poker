@@ -20,6 +20,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Table Debug Console Commands
+
+Open or hide the table debug console with `Ctrl` + `~`.
+
+Commands typed into the debug console are local-only. They are not sent as chat and they are not printed in the console. Each command arms a one-shot test for the next matching outbound message from this browser.
+
+- `/badsig` - badly signs the next outbound RTC message, testing transport BLS signature rejection and disagreement recirculation.
+- `/badshuffle` - corrupts the shuffle trace in the next `SubmitPublicKey` wire message, testing shuffle verification failure.
+- `/badunmask` - corrupts the next unmask submit wire message with a wrong valid G1 card point, testing final unmasking-history verification.
+- `/badpk` - sends a wrong valid public key in the next `SubmitPublicKey` wire message, testing shuffle or unmask verification failure.
+- `/dropnext` - silently drops the next outbound RTC message.
+- `/dupenext` - sends the next outbound RTC message twice, testing duplicate-message handling.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

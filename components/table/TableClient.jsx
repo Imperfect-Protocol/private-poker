@@ -9,6 +9,7 @@ import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlow
 import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
 import TerminalResultDialog from '@/components/table_screen/dialogs/TerminalResultDialog';
 import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
+import { useAccounts } from '@/hooks/useAccounts';
 import { submitConsoleLine } from '@/lib/crum_pkr';
 
 const readCreatedTableSnapshot = (tableId) => {
@@ -27,6 +28,10 @@ const readCreatedTableSnapshot = (tableId) => {
 };
 
 const formatSeatAddress = (address) => (address ? address.slice(2, 4).toUpperCase() : 'Peer');
+const ensureHexPrefix = (value) => {
+  const normalized = String(value ?? '');
+  return normalized.startsWith('0x') ? normalized : `0x${normalized}`;
+};
 
 const rtcMessageLabels = (message) => {
   if (!message?.type) return ['Unknown RTC Message'];
@@ -145,6 +150,9 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     publishMessage: table.publishMessage,
     prepareNetworkSession: table.prepareNetworkSession,
   });
+  const { getPlayerDisplayname } = useAccounts({
+    playerAddresses: table.currentSeat?.playerAddress ? [table.currentSeat.playerAddress] : [],
+  });
 
   const displayTable = useMemo(() => ({
     ...table,
@@ -169,6 +177,21 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     [...messages, ...pokerTableState.gameMessages].slice(-160)
   ), [messages, pokerTableState.gameMessages]);
   const p2pEstablished = table.networkSnapshot?.status === 'connected';
+  const consoleIdentity = useMemo(() => {
+    const playerAddress = table.currentSeat?.playerAddress;
+    const displayName = getPlayerDisplayname(playerAddress) || 'Console';
+    const currentSeat = table.seats?.find((seat) => (
+      seat.seatNo === table.currentSeat?.seatNo
+      || seat.playerAddress?.toLowerCase() === playerAddress?.toLowerCase()
+    ));
+    const announceKey = currentSeat?.announcePublicKey;
+    return {
+      label: displayName,
+      detail: playerAddress && announceKey
+        ? `${ensureHexPrefix(playerAddress)}:${ensureHexPrefix(announceKey)}`
+        : '',
+    };
+  }, [getPlayerDisplayname, table.currentSeat?.playerAddress, table.currentSeat?.seatNo, table.seats]);
 
   useEffect(() => {
     if (!protocolActionState) return;
@@ -259,23 +282,38 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     const command = input.trim();
     if (!command) return;
 
-    if (command.toLowerCase() === '/badsig') {
-      table.armBadSignatureOnce?.();
-      setInput('');
-      return;
+    switch (command.toLowerCase()) {
+      case '/badsig':
+        table.armBadSignatureOnce?.();
+        setInput('');
+        return;
+      case '/dropnext':
+        table.armDropNextMessage?.();
+        setInput('');
+        return;
+      case '/dupenext':
+        table.armDuplicateNextMessage?.();
+        setInput('');
+        return;
+      case '/badshuffle':
+        pokerTableActions.armPokerDebugCheat?.('badshuffle');
+        setInput('');
+        return;
+      case '/badunmask':
+        pokerTableActions.armPokerDebugCheat?.('badunmask');
+        setInput('');
+        return;
+      case '/badpk':
+        pokerTableActions.armPokerDebugCheat?.('badpk');
+        setInput('');
+        return;
+      default:
+        break;
     }
 
     if (pokerTableActions.submitChat(input)) {
       setInput('');
     }
-  };
-
-  const handleDealTest = () => {
-    addDebugMessage({
-      text: 'Direct state broadcast is disabled; gameplay sync uses PokerHand submit calls.',
-      sender: 'Game',
-      level: 'warn',
-    });
   };
 
   const handleCloseTab = () => {
@@ -287,12 +325,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
       table={displayTable}
       debugConsole={showDebugConsole
         ? {
-          tableId,
+          consoleIdentity,
           messages: debugMessages,
           input,
           onInputChange: setInput,
           onSubmit: handleSend,
-          onDealTest: handleDealTest,
         }
         : null}
       actionBarProps={pokerTableState.actionBarProps}

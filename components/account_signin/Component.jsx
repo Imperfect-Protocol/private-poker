@@ -16,7 +16,7 @@ function TierCard({ tier, selected, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(tier)}
-      className={`text-left rounded border p-5 transition-all ${accentClass}`}
+      className={`cursor-pointer text-left rounded border p-5 transition-all ${accentClass}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -178,7 +178,7 @@ export default function AccountSignin() {
                 type="button"
                 onClick={handleSignin}
                 disabled={isSigningIn}
-                className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                className="mt-6 w-full cursor-pointer rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {!isWalletConnected ? 'Connect Wallet' : isSigningIn ? 'Signing...' : 'Sign In'}
               </button>
@@ -196,7 +196,7 @@ export default function AccountSignin() {
                   <button
                     type="button"
                     onClick={handleProfileEdit}
-                    className="rounded border border-cyan-500/40 px-4 py-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-400/10"
+                    className="cursor-pointer rounded border border-cyan-500/40 px-4 py-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-400/10"
                   >
                     Edit
                   </button>
@@ -247,7 +247,7 @@ export default function AccountSignin() {
                   type="button"
                   onClick={handleProfileSave}
                   disabled={isSavingProfile}
-                  className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                  className="mt-6 w-full cursor-pointer rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
                 >
                   {isSavingProfile ? 'Saving...' : 'Save Profile'}
                 </button>
@@ -255,7 +255,7 @@ export default function AccountSignin() {
                 <button
                   type="button"
                   onClick={handleProfileContinue}
-                  className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300"
+                  className="mt-6 w-full cursor-pointer rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300"
                 >
                   Continue
                 </button>
@@ -292,7 +292,7 @@ export default function AccountSignin() {
                 type="button"
                 onClick={handleContinue}
                 disabled={isSubscribing}
-                className="mt-6 w-full rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+                className="mt-6 w-full cursor-pointer rounded border border-teal-400 bg-teal-400 px-6 py-4 font-black uppercase tracking-[0.18em] text-slate-950 transition-all hover:bg-teal-300 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {isSubscribing ? subscriptionStep : 'Continue'}
               </button>

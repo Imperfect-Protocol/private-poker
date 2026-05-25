@@ -91,7 +91,15 @@ export function useTable({
     isTableFull,
     tableCapacity,
   });
-  const [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession, armBadSignatureOnce] = network;
+  const [
+    publishMessage,
+    subscribeTo,
+    networkSnapshot,
+    prepareNetworkSession,
+    armBadSignatureOnce,
+    armDropNextMessage,
+    armDuplicateNextMessage,
+  ] = network;
   const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
   const mySeatNo = useMemo(() => (
@@ -225,6 +233,8 @@ export function useTable({
     prepareNetworkSession,
     publishMessage,
     armBadSignatureOnce,
+    armDropNextMessage,
+    armDuplicateNextMessage,
     retryInboundConnection,
     seats,
     subscribeTo,

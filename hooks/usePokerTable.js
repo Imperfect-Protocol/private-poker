@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  G1,
   bytesToHex,
   hexToBytes,
   make_public_key_from_signing_key,
@@ -29,6 +30,7 @@ const POKER_ACTION_MESSAGE = 'POKER_ACTION';
 const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
 const CHAT_MESSAGE = 'ChatMessage';
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
+const BAD_UNMASK_G1 = G1.BASE.toRawBytes(true);
 
 function shallowEqual(left, right) {
   const leftKeys = Object.keys(left ?? {});
@@ -67,6 +69,76 @@ function encodeCardSet(cards) {
 
 function decodeCardSet(cards) {
   return cards.map(bytesPoint);
+}
+
+function refreshWireSubmit(wire) {
+  if (!wire?.action) return wire;
+  wire.submit = poker_action_wire_to_submit(wire.action);
+  return wire;
+}
+
+function corruptShuffleTrace(wire) {
+  const traces = wire?.action?.traces;
+  if (!Array.isArray(traces) || traces.length === 0) return false;
+
+  const firstTrace = traces[0];
+  const beforeIndex = Array.isArray(firstTrace)
+    ? firstTrace[1]
+    : firstTrace.claimed_before_index;
+  const nextBeforeIndex = (Number(beforeIndex ?? 0) + 1) % Math.max(traces.length, 1);
+
+  if (Array.isArray(firstTrace)) {
+    firstTrace[1] = nextBeforeIndex;
+  } else {
+    firstTrace.claimed_before_index = nextBeforeIndex;
+  }
+  refreshWireSubmit(wire);
+  return true;
+}
+
+function corruptPublicKey(wire, game) {
+  if (wire?.action?.type !== 'SubmitPublicKey') return false;
+  const badPublicKey = game?.publicKey?.negate?.();
+  if (!badPublicKey?.toRawBytes) return false;
+
+  wire.action.public_key_g2_compressed = badPublicKey.toRawBytes(true);
+  refreshWireSubmit(wire);
+  return true;
+}
+
+function replaceFirstCard(cardSets) {
+  if (!Array.isArray(cardSets)) return false;
+  for (const cardSet of cardSets) {
+    if (Array.isArray(cardSet) && cardSet.length > 0) {
+      cardSet[0] = BAD_UNMASK_G1;
+      return true;
+    }
+  }
+  return false;
+}
+
+function corruptUnmaskWire(wire) {
+  if (!wire?.action) return false;
+
+  if (wire.action.type === 'SubmitCommunityCards') {
+    if (!Array.isArray(wire.action.cards_g1_compressed) || wire.action.cards_g1_compressed.length === 0) {
+      return false;
+    }
+    wire.action.cards_g1_compressed[0] = BAD_UNMASK_G1;
+    refreshWireSubmit(wire);
+    return true;
+  }
+
+  if (
+    wire.action.type === 'SubmitPlayerCards'
+    || wire.action.type === 'SubmitShowdownCards'
+  ) {
+    const changed = replaceFirstCard(wire.action.player_cards_g1_compressed);
+    if (changed) refreshWireSubmit(wire);
+    return changed;
+  }
+
+  return false;
 }
 
 function encodeWire(wire) {
@@ -668,6 +740,11 @@ export function usePokerTable({
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
   const protocolActionInFlightRef = useRef(null);
+  const debugCheatsRef = useRef({
+    badPk: false,
+    badShuffle: false,
+    badUnmask: false,
+  });
   const tableSeats = useMemo(() => table?.seats ?? [], [table?.seats]);
 
   const senderForSeat = useCallback((seatNo) => {
@@ -694,8 +771,8 @@ export function usePokerTable({
     return 'Game';
   }, [senderForSeat]);
 
-  const appendGameLog = useCallback((line, sender = 'Game') => {
-    setGameMessages((prev) => [...prev, { text: line, sender }].slice(-160));
+  const appendGameLog = useCallback((line, sender = 'Game', level = 'info') => {
+    setGameMessages((prev) => [...prev, { text: line, sender, level }].slice(-160));
   }, []);
 
   const appendTraceLines = useCallback((lines, fallbackSeatNo = null) => {
@@ -791,6 +868,25 @@ export function usePokerTable({
     publishMessage(message);
   }, [publishMessage]);
 
+  const applyDebugCheatsToWire = useCallback((wire, game) => {
+    const cheats = debugCheatsRef.current;
+    if (cheats.badUnmask && corruptUnmaskWire(wire)) {
+      cheats.badUnmask = false;
+    }
+
+    if (wire?.action?.type === 'SubmitPublicKey') {
+      if (cheats.badShuffle && corruptShuffleTrace(wire)) {
+        cheats.badShuffle = false;
+      }
+
+      if (cheats.badPk && corruptPublicKey(wire, game)) {
+        cheats.badPk = false;
+      }
+    }
+
+    return wire;
+  }, []);
+
   const submitChat = useCallback((text) => {
     const chatText = text?.trim();
     if (!chatText) return false;
@@ -799,6 +895,22 @@ export function usePokerTable({
     appendGameLog(chatText, 'Me');
     return true;
   }, [appendGameLog, publishMessage]);
+
+  const armPokerDebugCheat = useCallback((name) => {
+    switch (name) {
+      case 'badpk':
+        debugCheatsRef.current.badPk = true;
+        return true;
+      case 'badshuffle':
+        debugCheatsRef.current.badShuffle = true;
+        return true;
+      case 'badunmask':
+        debugCheatsRef.current.badUnmask = true;
+        return true;
+      default:
+        return false;
+    }
+  }, []);
 
   const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game)) => {
     if (!game || currentPlayer == null) return null;
@@ -817,11 +929,12 @@ export function usePokerTable({
     const envelope = game.clientState.submit_local_action(action);
     const displayLines = botTraceLines(game, action, envelope.result, logLines);
     const wire = envelope.to_wire(displayLines);
+    applyDebugCheatsToWire(wire, game);
     publishWire(wire);
     appendTraceLines(displayLines, action.player);
     updateView();
     return wire;
-  }, [appendTraceLines, publishWire, updateView]);
+  }, [appendTraceLines, applyDebugCheatsToWire, publishWire, updateView]);
 
   const buildAutomaticAction = useCallback((game) => {
     const hand = game.clientState.current_hand();
@@ -1034,8 +1147,18 @@ export function usePokerTable({
       return true;
     }
 
-    const envelope = wire.to_envelope();
-    const { applied, result } = game.clientState.apply_envelope_result(envelope);
+    let envelope;
+    let appliedResult;
+    try {
+      envelope = wire.to_envelope();
+      appliedResult = game.clientState.apply_envelope_result(envelope);
+    } catch (error) {
+      appendGameLog(error.message, senderForAddress(playerAddress), 'error');
+      updateView({ force: true });
+      return true;
+    }
+
+    const { applied, result } = appliedResult;
     if (applied) {
       const displayLines = wire.log_lines?.length > 0
         ? wire.log_lines
@@ -1180,11 +1303,12 @@ export function usePokerTable({
 
   const pokerTableActions = useMemo(() => ({
     handleNetworkMessage,
+    armPokerDebugCheat,
     submitProtocolAction,
     submitBet,
     submitChat,
     startNextHand,
-  }), [handleNetworkMessage, startNextHand, submitBet, submitChat, submitProtocolAction]);
+  }), [armPokerDebugCheat, handleNetworkMessage, startNextHand, submitBet, submitChat, submitProtocolAction]);
 
   return [pokerTableState, pokerTableActions];
 }

@@ -154,6 +154,14 @@ export function useNetwork({
     session.armBadSignatureOnce();
   }, [session]);
 
+  const armDropNextMessage = useCallback(() => {
+    session.armDropNextMessage();
+  }, [session]);
+
+  const armDuplicateNextMessage = useCallback(() => {
+    session.armDuplicateNextMessage();
+  }, [session]);
+
   const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback, options = {}) => {
     const keys = blsKeys ?? await generateKeys(tableDetails);
     const generatedPublicKey = `0x${keys.publicKey}`;
@@ -220,5 +228,13 @@ export function useNetwork({
     tableId,
   ]);
 
-  return [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession, armBadSignatureOnce];
+  return [
+    publishMessage,
+    subscribeTo,
+    networkSnapshot,
+    prepareNetworkSession,
+    armBadSignatureOnce,
+    armDropNextMessage,
+    armDuplicateNextMessage,
+  ];
 }
