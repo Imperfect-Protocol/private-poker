@@ -5,10 +5,12 @@ import FlowStepDialog from '@/components/table_screen/dialogs/FlowStepDialog';
 
 const connectionStatus = (state) => {
   if (state === 'Connected') return 'complete';
-  if (state === 'Disconnected') return 'error';
+  if (state === 'Disconnected' || state === 'OfferTimeout') return 'error';
   if (state === 'OfferSent' || state === 'AcceptSent' || state === 'AcceptReceived' || state === 'Created') return 'active';
   return 'pending';
 };
+
+const canRetryInbound = (state) => state === 'Disconnected' || state === 'OfferTimeout';
 
 export default function ReJoinTableFlowDialog({
   table,
@@ -66,7 +68,7 @@ export default function ReJoinTableFlowDialog({
           id: 'inbound',
           label: 'Peer Connection Inbound',
           status: inboundStatus,
-          action: inboundStatus === 'error' ? (
+          action: canRetryInbound(networkSnapshot?.inboundState) ? (
             <button
               type="button"
               onClick={() => table.retryInboundConnection?.()}

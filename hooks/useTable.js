@@ -109,7 +109,7 @@ export function useTable({
     previousSeat?.announcePublicKey ?? '',
   ].join('::');
 
-  const subscribeToPreviousSeat = useCallback(async () => {
+  const subscribeToPreviousSeat = useCallback(async ({ immediateOffer = false } = {}) => {
     if (!isTableFull || !previousSeat?.playerAddress) return;
 
     const { playerAddress: peerPlayerAddress, announcePublicKey } = previousSeat;
@@ -119,8 +119,12 @@ export function useTable({
         playerAddress: peerPlayerAddress,
         event,
       });
-    });
+    }, { immediateOffer });
   }, [isTableFull, onSeat, previousSeat, subscribeTo]);
+
+  const retryInboundConnection = useCallback(() => (
+    subscribeToPreviousSeat({ immediateOffer: true })
+  ), [subscribeToPreviousSeat]);
 
   useEffect(() => {
     if (!networkEnabled) return;
@@ -220,7 +224,7 @@ export function useTable({
     playerNetworkStates: networkSnapshot?.peerStates ?? {},
     prepareNetworkSession,
     publishMessage,
-    retryInboundConnection: subscribeToPreviousSeat,
+    retryInboundConnection,
     seats,
     subscribeTo,
   });

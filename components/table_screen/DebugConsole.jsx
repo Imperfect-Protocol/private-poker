@@ -28,13 +28,22 @@ export default function DebugConsole({
   onDealTest,
 }) {
   const messageListRef = useRef(null);
+  const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
     const messageList = messageListRef.current;
-    if (!messageList) return;
+    if (!messageList || !shouldAutoScrollRef.current) return;
 
     messageList.scrollTop = messageList.scrollHeight;
   }, [messages.length]);
+
+  const handleMessageListScroll = () => {
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+
+    const distanceFromBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 12;
+  };
 
   const getMessageClassName = (message) => {
     if (message.sender === 'Me') return 'text-cyan-400';
@@ -70,7 +79,7 @@ export default function DebugConsole({
   };
 
   return (
-    <div className="absolute bottom-[0px] right-[0px] w-[30rem] h-60 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-[75]">
+    <div className="absolute bottom-[0px] right-[0px] w-[30rem] h-60 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-[90]">
       <div className="bg-slate-950 px-3 py-1 border-b border-teal-500/10 flex justify-between">
         <span className="text-[11px] font-mono text-teal-500 uppercase">Comm_Link</span>
         <span className="text-[11px] font-mono text-slate-600">ID: {tableId}</span>
@@ -81,7 +90,12 @@ export default function DebugConsole({
       >
         State Broadcast Disabled
       </button>
-      <div ref={messageListRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
+      <div
+        ref={messageListRef}
+        onScroll={handleMessageListScroll}
+        onWheel={(event) => event.stopPropagation()}
+        className="flex-1 overflow-y-auto overscroll-contain p-3 flex flex-col gap-2 custom-scrollbar"
+      >
         {messages.map((message, index) => {
           const rtcMessage = message.sender === 'RTC' ? parseRtcMessage(message.text) : null;
           const senderClassName = getMessageClassName(message);

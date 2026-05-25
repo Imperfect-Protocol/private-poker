@@ -164,7 +164,7 @@ export function useNetwork({
     session.publishMessage(message);
   }, [session]);
 
-  const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback) => {
+  const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback, options = {}) => {
     const keys = blsKeys ?? await generateKeys(tableDetails);
     const generatedPublicKey = `0x${keys.publicKey}`;
     if (
@@ -187,7 +187,7 @@ export function useNetwork({
       isTableFull,
       tableCapacity,
     });
-    await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback);
+    await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback, options);
   }, [
     blsKeys,
     generateKeys,
