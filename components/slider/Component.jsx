@@ -25,6 +25,12 @@ function nearestSteppedValue(rawValue, min, max, step) {
   }, candidates[0]);
 }
 
+function heatColor(percent) {
+  const normalized = clamp(percent, 0, 100) / 100;
+  const hue = 50 - (normalized * 32);
+  return `hsl(${hue} 100% 55%)`;
+}
+
 export default class Slider extends ReactComponent {
   getPercentFill() {
     const { min = 0, max = 100, value = min } = this.props;
@@ -51,19 +57,38 @@ export default class Slider extends ReactComponent {
       ariaLabel = 'Slider',
       disabled = false,
       hideHandle = false,
+      colorScheme = 'teal',
     } = this.props;
     const percentFill = this.getPercentFill();
-    const fillClass = disabled ? 'bg-slate-700' : 'bg-teal-400';
+    const isHeat = colorScheme === 'heat' && !disabled;
+    const currentColor = heatColor(percentFill);
+    const activeStyle = isHeat
+      ? {
+        backgroundColor: currentColor,
+        borderColor: currentColor,
+        boxShadow: `0 0 12px color-mix(in srgb, ${currentColor} 72%, transparent)`,
+      }
+      : undefined;
+    const fillClass = disabled ? 'bg-slate-700' : isHeat ? '' : 'bg-teal-400';
     const markerActiveClass = disabled
       ? 'bg-slate-700 border-slate-500'
+      : isHeat
+        ? ''
       : 'bg-teal-400 border-teal-200 shadow-[0_0_10px_rgba(45,212,191,0.8)]';
+    const handleClass = disabled ? 'bg-slate-700' : isHeat ? '' : 'bg-teal-300';
+    const handleStyle = isHeat
+      ? {
+        backgroundColor: currentColor,
+        boxShadow: `0 0 18px color-mix(in srgb, ${currentColor} 82%, transparent)`,
+      }
+      : undefined;
 
     return (
       <div className="relative w-full max-w-md h-8 flex items-center mx-auto">
         <div className="absolute left-0 right-0 h-1.5 bg-slate-800 rounded-full overflow-hidden">
           <div
             className={`absolute top-0 bottom-0 left-0 ${fillClass} transition-all duration-75`}
-            style={{ width: `${percentFill}%` }}
+            style={{ width: `${percentFill}%`, ...(isHeat ? { backgroundColor: currentColor } : {}) }}
           />
         </div>
 
@@ -76,15 +101,15 @@ export default class Slider extends ReactComponent {
                   ? markerActiveClass
                   : 'bg-slate-900 border-slate-600'
               }`}
-              style={{ left: `${preset}%` }}
+              style={{ left: `${preset}%`, ...(percentFill >= preset ? activeStyle : {}) }}
             />
           ))}
         </div>
 
         {!hideHandle && (
           <div
-            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-teal-300 rotate-45 border border-slate-950 shadow-[0_0_15px_rgba(45,212,191,1)] pointer-events-none transition-all duration-75 z-20"
-            style={{ left: `${percentFill}%` }}
+            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 ${handleClass} rotate-45 border border-slate-950 shadow-[0_0_15px_rgba(45,212,191,1)] pointer-events-none transition-all duration-75 z-20`}
+            style={{ left: `${percentFill}%`, ...handleStyle }}
           />
         )}
 

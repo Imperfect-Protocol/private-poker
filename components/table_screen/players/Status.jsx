@@ -1,3 +1,5 @@
+import { Coins } from 'lucide-react';
+
 export default function Status({
   isEmptySeat,
   networkState,
@@ -9,9 +11,7 @@ export default function Status({
 
   if (networkState === 'connected') {
     return (
-      <p className="text-xs font-mono text-emerald-200 font-black">
-        {chipStack ?? 0} CHIPS
-      </p>
+      <ChipAmount amount={chipStack ?? 0} />
     );
   }
 
@@ -22,9 +22,7 @@ export default function Status({
           Seating...
         </p>
         {chipStack != null && (
-          <p className="text-[10px] font-mono text-slate-400 font-black">
-            {chipStack} CHIPS
-          </p>
+          <ChipAmount amount={chipStack} />
         )}
       </>
     );
@@ -34,10 +32,17 @@ export default function Status({
     <>
       <p className="text-xs font-mono text-slate-500 font-black">Sitting Out</p>
       {chipStack != null && (
-        <p className="text-[10px] font-mono text-slate-400 font-black">
-          {chipStack} CHIPS
-        </p>
+        <ChipAmount amount={chipStack} />
       )}
     </>
+  );
+}
+
+function ChipAmount({ amount }) {
+  return (
+    <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-mono text-white font-black">
+      <Coins size={15} className="text-yellow-200 drop-shadow-[0_0_8px_rgba(250,204,21,0.35)]" />
+      <span>{amount}</span>
+    </p>
   );
 }

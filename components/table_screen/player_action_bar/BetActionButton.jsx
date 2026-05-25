@@ -10,7 +10,7 @@ export default function BetActionButton({
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className="flex-[2] py-1 rounded-lg bg-teal-500 text-slate-950 hover:bg-teal-400 transition-colors shadow-[0_0_20px_rgba(20,184,166,0.4)] flex flex-col items-center justify-center leading-none group cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex-[2] py-1 rounded-lg bg-amber-400 text-slate-950 hover:bg-yellow-300 transition-colors shadow-[0_0_20px_rgba(251,191,36,0.35)] flex flex-col items-center justify-center leading-none group cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {children}
       </button>
@@ -19,7 +19,9 @@ export default function BetActionButton({
 
   const colorClass = kind === 'fold'
     ? 'border-red-500/50 text-red-500 hover:bg-red-500/10'
-    : 'border-teal-500/50 text-teal-500 hover:bg-teal-500/10';
+    : kind === 'call'
+      ? 'border-amber-300/60 text-amber-200 hover:bg-amber-400/10'
+    : 'border-sky-400/50 text-sky-300 hover:bg-sky-400/10';
 
   return (
     <button

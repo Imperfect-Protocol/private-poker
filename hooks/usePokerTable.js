@@ -6,7 +6,6 @@ import {
   make_signing_key_from_seed,
 } from '@/lib/crum_bls';
 import {
-  final_lines,
   HAND_ID,
   INITIAL_CHIPS,
   PokerAction,
@@ -23,13 +22,12 @@ import {
   POKER_HOLDEM_ROUNDS,
   PokerTable,
   communityCardConsoleLines,
-  playerCardConsoleLines,
-  playerOwnCardsConsoleString,
 } from '@/lib/crum_pkr';
 import { holdemRank, holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
 const POKER_ACTION_MESSAGE = 'POKER_ACTION';
 const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
+const CHAT_MESSAGE = 'ChatMessage';
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
 
 function shallowEqual(left, right) {
@@ -361,23 +359,23 @@ function botTraceLines(game, action, result, fallbackLines = []) {
     const didFold = result?.events?.some((event) => event.type === 'fold');
     const verb = didFold ? 'Folded' : `Bet: $${action.amount}`;
     return [
-      `Player ${action.player + 1} (${playerOwnCardsConsoleString(action.player, hand, game.signingKey)}) ${verb}`,
+      `Player ${action.player + 1} ${verb}`,
     ];
   }
 
   const events = result?.events ?? [];
   const startedRound = events.find((event) => event.type === 'round_started');
   if (startedRound?.round_number === 1) {
-    return [...fallbackLines, ...playerCardConsoleLines(hand)];
+    return fallbackLines;
   }
   if (startedRound?.round_number > 1) {
     return [...fallbackLines, ...communityCardConsoleLines(hand)];
   }
   if (events.some((event) => event.type === 'hand_ended')) {
-    return [...fallbackLines, ...playerCardConsoleLines(hand)];
+    return fallbackLines;
   }
   if (events.some((event) => event.type === 'hand_result')) {
-    return [...fallbackLines, ...final_lines(game.clientState.table)];
+    return [...fallbackLines, ...communityCardConsoleLines(hand)];
   }
 
   return fallbackLines;
@@ -459,7 +457,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
       state: 'Showdown',
       seat,
       canStartNextHand: pokerState.type === 'Finished',
-      pot: showdown.winner == null ? payoutAmount : 0,
+      pot: payoutAmount,
       minBet: safeCallAmount(hand, viewerPlayerIndex),
       maxBet: safeChipsRemaining(hand, viewerPlayerIndex),
       step: hand.get_small_blind(),
@@ -619,6 +617,14 @@ export function usePokerTable({
     return formatSeatSender(seat?.playerAddress, seatNo);
   }, [tableSeats]);
 
+  const senderForAddress = useCallback((address) => {
+    const normalizedAddress = address?.toLowerCase();
+    const seatNo = tableSeats.findIndex((seat) => (
+      seat.playerAddress?.toLowerCase() === normalizedAddress
+    ));
+    return seatNo >= 0 ? senderForSeat(seatNo) : formatSeatSender(address, 0);
+  }, [senderForSeat, tableSeats]);
+
   const senderForLine = useCallback((line, fallbackSeatNo = null) => {
     const playerLine = line.match(/^Player\s+(\d+)\b/);
     if (playerLine) return senderForSeat(Number(playerLine[1]) - 1);
@@ -726,6 +732,15 @@ export function usePokerTable({
     publishMessage(message);
   }, [publishMessage]);
 
+  const submitChat = useCallback((text) => {
+    const chatText = text?.trim();
+    if (!chatText) return false;
+
+    publishMessage({ type: CHAT_MESSAGE, text: chatText });
+    appendGameLog(chatText, 'Me');
+    return true;
+  }, [appendGameLog, publishMessage]);
+
   const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game)) => {
     if (!game || currentPlayer == null) return null;
     const wire = game.clientState.submit_nop({
@@ -829,7 +844,6 @@ export function usePokerTable({
     if (handState.current_state === POKER_HAND_STATE_FINISHED) {
       if (!game.seenFinished) {
         game.seenFinished = true;
-        appendTraceLines(final_lines(game.clientState.table), game.clientState.player_index);
       }
       updateView();
       return null;
@@ -864,7 +878,7 @@ export function usePokerTable({
         protocolActionInFlightRef.current = null;
       }
     }
-  }, [appendTraceLines, buildAutomaticAction, ensureKeys, submitAction, submitNop, updateView]);
+  }, [buildAutomaticAction, ensureKeys, submitAction, submitNop, updateView]);
 
   const startNextHand = useCallback(() => {
     const game = gameRef.current;
@@ -892,8 +906,17 @@ export function usePokerTable({
     return true;
   }, [appendTraceLines, updateView]);
 
-  const handleNetworkMessage = useCallback(async (message) => {
-    if (message?.type !== POKER_ACTION_MESSAGE && message?.type !== POKER_GAME_MESSAGE) return false;
+  const handleNetworkMessage = useCallback(async (message, playerAddress = null) => {
+    if (
+      message?.type !== POKER_ACTION_MESSAGE
+      && message?.type !== POKER_GAME_MESSAGE
+      && message?.type !== CHAT_MESSAGE
+    ) return false;
+
+    if (message.type === CHAT_MESSAGE) {
+      appendGameLog(message.text ?? '', senderForAddress(playerAddress));
+      return true;
+    }
 
     const game = gameRef.current ?? resetGame();
     if (!game) return true;
@@ -936,7 +959,17 @@ export function usePokerTable({
       updateView({ force: true });
     }
     return true;
-  }, [appendTraceLines, publishMessage, resetGame, startNextHand, submitNop, submitProtocolAction, updateView]);
+  }, [
+    appendGameLog,
+    appendTraceLines,
+    publishMessage,
+    resetGame,
+    senderForAddress,
+    startNextHand,
+    submitNop,
+    submitProtocolAction,
+    updateView,
+  ]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
@@ -1011,7 +1044,7 @@ export function usePokerTable({
       disabled: !snapshot.showActionBar,
       sliderDisabled: snapshot.sliderDisabled || allInMode,
       hideCall: snapshot.hideCall || allInMode,
-      hideFold: snapshot.hideFold || allInMode || callAmount === 0,
+      hideFold: snapshot.hideFold || callAmount === 0,
       callAmount,
       primaryLabel: allInMode ? 'All In' : snapshot.primaryLabel,
       primaryAmount: snapshot.waitingForBlind || allInMode ? actionAmount : null,
@@ -1043,8 +1076,9 @@ export function usePokerTable({
     handleNetworkMessage,
     submitProtocolAction,
     submitBet,
+    submitChat,
     startNextHand,
-  }), [handleNetworkMessage, startNextHand, submitBet, submitProtocolAction]);
+  }), [handleNetworkMessage, startNextHand, submitBet, submitChat, submitProtocolAction]);
 
   return [pokerTableState, pokerTableActions];
 }

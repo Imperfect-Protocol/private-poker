@@ -1,4 +1,5 @@
 import BetActionButton from '@/components/table_screen/player_action_bar/BetActionButton';
+import { Coins } from 'lucide-react';
 
 export default function BetActionButtons({
   betAmount,
@@ -12,7 +13,7 @@ export default function BetActionButtons({
   onCall,
   onRaise,
 }) {
-  const callLabel = callAmount === 0 ? 'Check' : `Call $${callAmount}`;
+  const actionAmount = primaryAmount ?? betAmount;
 
   return (
     <div className="flex justify-center gap-3 w-full">
@@ -20,12 +21,33 @@ export default function BetActionButtons({
         <BetActionButton kind="fold" disabled={disabled} onClick={onFold}>Fold</BetActionButton>
       )}
       {!hideCall && (
-        <BetActionButton kind="call" disabled={disabled} onClick={onCall}>{callLabel}</BetActionButton>
+        <BetActionButton kind={callAmount === 0 ? 'check' : 'call'} disabled={disabled} onClick={onCall}>
+          {callAmount === 0 ? 'Check' : (
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span>Call</span>
+              <AmountWithCoin amount={callAmount} iconSize={14} />
+            </span>
+          )}
+        </BetActionButton>
       )}
       <BetActionButton kind="raise" disabled={disabled} onClick={onRaise}>
         <span className="text-[10px] font-black uppercase tracking-widest opacity-80 group-hover:opacity-100 mb-0.5">{primaryLabel}</span>
-        <span className="text-xl font-mono font-black tracking-tighter">${primaryAmount ?? betAmount}</span>
+        <AmountWithCoin
+          amount={actionAmount}
+          iconSize={18}
+          className="text-xl text-orange-950"
+          iconClassName="text-orange-700 drop-shadow-none"
+        />
       </BetActionButton>
     </div>
+  );
+}
+
+function AmountWithCoin({ amount, iconSize, className = '', iconClassName = 'text-yellow-200 drop-shadow-[0_0_8px_rgba(250,204,21,0.35)]' }) {
+  return (
+    <span className={`inline-flex items-center justify-center gap-1.5 font-mono font-black tracking-tighter ${className}`}>
+      <Coins size={iconSize} className={iconClassName} />
+      <span>{amount}</span>
+    </span>
   );
 }

@@ -20,6 +20,7 @@ export default function BetRaiseSlider({
         ariaLabel="Bet amount"
         disabled={disabled}
         hideHandle={disabled}
+        colorScheme="heat"
         onChange={onChange}
       />
     </div>

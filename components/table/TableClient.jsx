@@ -29,7 +29,7 @@ const formatSeatAddress = (address) => (address ? address.slice(2, 4).toUpperCas
 
 const rtcMessageLabels = (message) => {
   if (!message?.type) return ['Unknown RTC Message'];
-  if (message.type === 'CHAT') return [message.text ?? 'Chat Message'];
+  if (message.type === 'ChatMessage') return [message.text ?? 'Chat Message'];
   if (message.type === 'POKER_ACTION' || message.type === 'POKER_GAME_MESSAGE') {
     if (message.wire?.log_lines?.length > 0) {
       return message.wire.log_lines;
@@ -88,13 +88,12 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     const sender = formatSeatAddress(playerAddress);
     const messageLabels = rtcMessageLabels(incoming);
 
-    if (incoming?.type === 'POKER_ACTION' || incoming?.type === 'POKER_GAME_MESSAGE') {
-      pokerTableRef.current?.handleNetworkMessage(incoming);
-      return;
-    }
-
-    if (incoming.type === 'CHAT') {
-      messageLabels.forEach((text) => addDebugMessage({ text, sender }));
+    if (
+      incoming?.type === 'POKER_ACTION'
+      || incoming?.type === 'POKER_GAME_MESSAGE'
+      || incoming?.type === 'ChatMessage'
+    ) {
+      pokerTableRef.current?.handleNetworkMessage(incoming, playerAddress);
       return;
     }
 
@@ -238,9 +237,9 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     e.preventDefault();
     if (!input) return;
 
-    table.publishMessage({ type: 'CHAT', text: input });
-    addDebugMessage({ text: input, sender: 'Me' });
-    setInput('');
+    if (pokerTableActions.submitChat(input)) {
+      setInput('');
+    }
   };
 
   const handleDealTest = () => {

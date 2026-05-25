@@ -9,6 +9,51 @@ import DimmOverlay from '@/components/table_screen/DimmOverlay';
 import TablePlayers from '@/components/table_screen/players/Component';
 import Title from '@/components/table_screen/Title';
 
+const payoutClockPositions = {
+  12: { left: '60%', top: '16%' },
+  1: { left: '85%', top: '21%' },
+  2: { left: '102%', top: '32%' },
+  3: { left: '105%', top: '59%' },
+  4: { left: '102%', top: '81%' },
+  5: { left: '85%', top: '102%' },
+  6: { left: '60%', top: '101%' },
+  7: { left: '35%', top: '102%' },
+  8: { left: '18%', top: '81%' },
+  9: { left: '15%', top: '59%' },
+  10: { left: '18%', top: '32%' },
+  11: { left: '35%', top: '21%' },
+};
+
+function getSeatingArrangement(numPlayers) {
+  switch (numPlayers) {
+    case 2: return [6, 12];
+    case 3: return [6, 10, 2];
+    case 4: return [6, 9, 12, 3];
+    case 6: return [6, 8, 10, 12, 2, 4];
+    default: return [6, 8, 10, 12, 2, 4].slice(0, numPlayers);
+  }
+}
+
+function payoutPositionStyle(tableData, currentPlayerAddress, winnerSeat) {
+  if (winnerSeat == null) return payoutClockPositions[12];
+
+  const players = tableData?.players ?? [];
+  const userIndex = players.findIndex(
+    (player) => player.playerAddress?.toLowerCase() === currentPlayerAddress?.toLowerCase(),
+  );
+  const visualSeats = userIndex >= 0
+    ? [
+      ...players.slice(userIndex).map((_, index) => userIndex + index),
+      ...players.slice(0, userIndex).map((_, index) => index),
+    ]
+    : players.map((_, index) => index);
+  const visualIndex = visualSeats.indexOf(winnerSeat);
+  const maxSeatCount = Number(tableData?.maxSeats || tableData?.max_players || players.length || 2);
+  const clockSeats = getSeatingArrangement(maxSeatCount);
+
+  return payoutClockPositions[clockSeats[visualIndex]] ?? payoutClockPositions[12];
+}
+
 export default function TableScreen({
   tableData,
   currentPlayerAddress,
@@ -35,6 +80,7 @@ export default function TableScreen({
       ? gameState.resultRank
       : `${winnerLabel ?? 'Winner'} Wins With ${gameState.resultRank}`
     : null;
+  const payoutStyle = payoutPositionStyle(tableData, currentPlayerAddress, gameState?.payout?.winner);
   const countdownCompletedRef = useRef(false);
 
   useEffect(() => {
@@ -109,7 +155,10 @@ export default function TableScreen({
 
           {gameState?.payout && (
             <div className="absolute inset-0 z-20 pointer-events-none">
-              <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-yellow-300/40 bg-slate-950/85 px-4 py-2 text-yellow-200 shadow-[0_0_28px_rgba(250,204,21,0.35)] animate-[payoutPulse_1.8s_ease-in-out_infinite]">
+              <div
+                className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-yellow-300/40 bg-slate-950/85 px-4 py-2 text-yellow-200 shadow-[0_0_28px_rgba(250,204,21,0.35)] animate-[payoutPulse_1.8s_ease-in-out_infinite]"
+                style={payoutStyle}
+              >
                 <Coins size={18} />
                 <span className="font-mono text-sm font-black">+{gameState.payout.amount}</span>
               </div>
