@@ -7,6 +7,7 @@ export default function BetActionButtons({
   disabled = false,
   hideCall = false,
   hideFold = false,
+  hideRaise = false,
   primaryLabel = 'Raise',
   primaryAmount = null,
   onFold,
@@ -30,15 +31,17 @@ export default function BetActionButtons({
           )}
         </BetActionButton>
       )}
-      <BetActionButton kind="raise" disabled={disabled} onClick={onRaise}>
-        <span className="text-[10px] font-black uppercase tracking-widest opacity-80 group-hover:opacity-100 mb-0.5">{primaryLabel}</span>
-        <AmountWithCoin
-          amount={actionAmount}
-          iconSize={18}
-          className="text-xl text-orange-950"
-          iconClassName="text-orange-700 drop-shadow-none"
-        />
-      </BetActionButton>
+      {!hideRaise && (
+        <BetActionButton kind="raise" disabled={disabled} onClick={onRaise}>
+          <span className="text-[10px] font-black uppercase tracking-widest opacity-80 group-hover:opacity-100 mb-0.5">{primaryLabel}</span>
+          <AmountWithCoin
+            amount={actionAmount}
+            iconSize={18}
+            className="text-xl text-orange-950"
+            iconClassName="text-orange-700 drop-shadow-none"
+          />
+        </BetActionButton>
+      )}
     </div>
   );
 }

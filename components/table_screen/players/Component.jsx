@@ -55,6 +55,7 @@ export default function TablePlayers({
   currentPlayerAddress,
   playerNetworkStates = {},
   gameState = null,
+  getPlayerDisplayname = null,
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
@@ -83,11 +84,14 @@ export default function TablePlayers({
     const isWinner = Boolean(showdownHand?.isWinner);
     const chipStack = gameState?.chipStacks?.[originalIndex] ?? player.chips ?? null;
     const chipStackSize = gameState?.chipStackSizes?.[originalIndex] ?? null;
+    const displayName = isEmptySeat
+      ? ''
+      : getPlayerDisplayname?.(player.playerAddress) ?? player.displayName;
 
     return (
       <Player
         key={isEmptySeat ? player.seatId : player.playerAddress}
-        player={player}
+        player={{ ...player, displayName }}
         positionClass={clockPositions[activeSeats[index]]}
         isMe={isMe}
         isEmptySeat={isEmptySeat}

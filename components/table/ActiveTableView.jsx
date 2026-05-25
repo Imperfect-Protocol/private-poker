@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from 'react';
 import TableScreen from '@/components/table_screen/Component';
+import { useAccounts } from '@/hooks/useAccounts';
 
 export default function ActiveTableView({
   table,
@@ -11,6 +13,10 @@ export default function ActiveTableView({
   children,
 }) {
   const currentSeat = table.currentSeat ?? {};
+  const playerAddresses = useMemo(() => (
+    table.tableData?.players?.map((player) => player.playerAddress).filter(Boolean) ?? []
+  ), [table.tableData?.players]);
+  const { getPlayerDisplayname } = useAccounts({ playerAddresses });
 
   return (
     <TableScreen
@@ -23,6 +29,7 @@ export default function ActiveTableView({
       gameState={gameState}
       onNextHandCountdownComplete={onNextHandCountdownComplete}
       currentSeatNo={currentSeat.seatNo}
+      getPlayerDisplayname={getPlayerDisplayname}
     >
       {children}
     </TableScreen>

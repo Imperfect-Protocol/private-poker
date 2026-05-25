@@ -63,6 +63,7 @@ export default function TableScreen({
   gameState = null,
   debugConsole = null,
   onNextHandCountdownComplete,
+  getPlayerDisplayname = null,
   children,
 }) {
   const hasDimOverlay = Children.toArray(children).length > 0;
@@ -74,7 +75,9 @@ export default function TableScreen({
   const winnerAddress = gameState?.resultWinner == null
     ? null
     : tableData?.players?.[gameState.resultWinner]?.playerAddress;
-  const winnerLabel = winnerAddress ? winnerAddress.slice(2, 4).toUpperCase() : null;
+  const winnerLabel = winnerAddress
+    ? getPlayerDisplayname?.(winnerAddress) || winnerAddress.slice(2, 4).toUpperCase()
+    : null;
   const resultRankText = gameState?.resultRank
     ? gameState.resultText === 'You Win'
       ? gameState.resultRank
@@ -151,6 +154,7 @@ export default function TableScreen({
             currentPlayerAddress={currentPlayerAddress}
             playerNetworkStates={playerNetworkStates}
             gameState={gameState}
+            getPlayerDisplayname={getPlayerDisplayname}
           />
 
           {gameState?.payout && (

@@ -50,6 +50,10 @@ const POKER_PROTOCOL_UI_STATES = new Set([
   'UnmaskShowdown',
   'SubmitPublicKey',
   'Finished',
+  'PreFlop',
+  'Flop',
+  'Turn',
+  'River',
 ]);
 
 export default function TableClient({ tableId, lobbyId, initialTableData = null, initialIsSeated = null }) {
@@ -69,6 +73,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [networkEnabled, setNetworkEnabled] = useState(false);
   const [showReJoinDialog, setShowReJoinDialog] = useState(false);
   const [reJoinDismissed, setReJoinDismissed] = useState(false);
+  const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [topUpRequest, setTopUpRequest] = useState(null);
 
   const addDebugMessage = useCallback((message) => {
@@ -189,6 +194,21 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     pokerTableRef.current = pokerTableActions;
   }, [pokerTableActions, table]);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!event.ctrlKey || event.repeat) return;
+      if (event.key !== '`' && event.key !== '~' && event.code !== 'Backquote') return;
+
+      event.preventDefault();
+      setShowDebugConsole((current) => !current);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const currentPlayerAddress = table.currentSeat?.playerAddress ?? null;
 
   useEffect(() => {
@@ -258,14 +278,16 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   return (
     <ActiveTableView
       table={displayTable}
-      debugConsole={{
-        tableId,
-        messages: debugMessages,
-        input,
-        onInputChange: setInput,
-        onSubmit: handleSend,
-        onDealTest: handleDealTest,
-      }}
+      debugConsole={showDebugConsole
+        ? {
+          tableId,
+          messages: debugMessages,
+          input,
+          onInputChange: setInput,
+          onSubmit: handleSend,
+          onDealTest: handleDealTest,
+        }
+        : null}
       actionBarProps={pokerTableState.actionBarProps}
       gameState={currentGameState}
       onNextHandCountdownComplete={pokerTableActions.startNextHand}
