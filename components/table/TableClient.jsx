@@ -167,7 +167,6 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
   useEffect(() => {
     if (!protocolActionState) return;
-    if (protocolActionState.seat !== table.currentSeat?.seatNo) return;
     if (!POKER_PROTOCOL_UI_STATES.has(protocolActionState.state)) return;
 
     const actionKey = [
@@ -264,6 +263,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
       }}
       actionBarProps={pokerTableState.actionBarProps}
       gameState={currentGameState}
+      onNextHandCountdownComplete={pokerTableActions.startNextHand}
     >
       {!table.hasJoinedTable && buyInDialogReady && (
         <BuyInDialog

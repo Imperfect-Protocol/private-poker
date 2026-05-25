@@ -17,6 +17,8 @@ export default function TablePlayer({
   chipStack = null,
   chipStackSize = null,
 }) {
+  const cardSize = isMe ? 'lg' : 'sm';
+
   return (
     <div className={`absolute ${positionClass} transition-all duration-700 ease-in-out z-20`}>
       <div className="flex flex-col items-center group relative">
@@ -25,13 +27,13 @@ export default function TablePlayer({
             {seatCards.length > 0 ? (
               seatCards.map((card, idx) => (
                 card
-                  ? <Card key={`${card}-${idx}`} rank={card[0]} suit={card[1]} isHidden={false} size="lg" />
-                  : <Card key={`hidden-${idx}`} isHidden size="lg" />
+                  ? <Card key={`${card}-${idx}`} rank={card[0]} suit={card[1]} isHidden={false} size={cardSize} />
+                  : <Card key={`hidden-${idx}`} isHidden size={cardSize} />
               ))
             ) : (
               <>
-                <Card isHidden size="sm" />
-                <Card isHidden size="sm" />
+                <Card isHidden size={cardSize} />
+                <Card isHidden size={cardSize} />
               </>
             )}
           </div>

@@ -7,6 +7,7 @@ export default function ActiveTableView({
   debugConsole,
   actionBarProps = {},
   gameState = null,
+  onNextHandCountdownComplete,
   children,
 }) {
   const currentSeat = table.currentSeat ?? {};
@@ -20,6 +21,7 @@ export default function ActiveTableView({
       showActionBar={table.tableData !== undefined && actionBarProps.visible === true}
       actionBarProps={actionBarProps}
       gameState={gameState}
+      onNextHandCountdownComplete={onNextHandCountdownComplete}
       currentSeatNo={currentSeat.seatNo}
     >
       {children}

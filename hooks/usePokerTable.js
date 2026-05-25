@@ -251,10 +251,10 @@ function chipStackSizes(stacks) {
   return stacks.map(chipStackSize);
 }
 
-function tableViewPatch(clientState, viewerSeatNo = null) {
+function tableViewPatch(clientState, signingKey, viewerSeatNo = null) {
   const hand = clientState?.current_hand();
   if (!hand) return {};
-  return clientState.table.to_display_data(viewerSeatNo).current_hand;
+  return clientState.table.to_display_data(viewerSeatNo, signingKey).current_hand;
 }
 
 function streetName(round) {
@@ -426,6 +426,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
     return {
       state: 'Showdown',
       seat,
+      canStartNextHand: pokerState.type === 'Finished',
       pot: showdown.winner == null ? payoutAmount : 0,
       minBet: safeCallAmount(hand, viewerPlayerIndex),
       maxBet: safeChipsRemaining(hand, viewerPlayerIndex),
@@ -631,7 +632,7 @@ export function usePokerTable({
     if (!game || !hand) return null;
 
     const viewerSeatNo = currentSeatNo ?? null;
-    const patch = tableViewPatch(game.clientState, viewerSeatNo);
+    const patch = tableViewPatch(game.clientState, game.signingKey, viewerSeatNo);
     const currentGameState = currentGameStateFrom(game, viewerSeatNo);
     const protocolActionState = protocolActionStateFrom(game);
     const nextCurrentGameState = !force && shallowEqual(
@@ -690,7 +691,7 @@ export function usePokerTable({
       current_player: currentPlayer,
       reason: 'your turn not mine',
     });
-    const displayLines = [`NOP: your turn not mine; current player is Player ${currentPlayer + 1}`];
+    const displayLines = [`Current player is Player ${currentPlayer + 1}`];
     wire.log_lines = displayLines;
     publishWire(wire);
     appendTraceLines(displayLines, game.clientState.player_index);
@@ -801,9 +802,12 @@ export function usePokerTable({
       handState.current_state === POKER_HAND_STATE_BET
       || handState.current_state === POKER_HAND_STATE_SMALL_BLIND
       || handState.current_state === POKER_HAND_STATE_BIG_BLIND
-      || handState.get_current_player() !== game.clientState.player_index
     ) {
       return null;
+    }
+
+    if (handState.get_current_player() !== game.clientState.player_index) {
+      return submitNop(game, handState.get_current_player());
     }
 
     const actionKey = `${game.clientState.hand_id}:${handState.to_tuple().join(':')}`;
@@ -823,7 +827,7 @@ export function usePokerTable({
         protocolActionInFlightRef.current = null;
       }
     }
-  }, [appendTraceLines, buildAutomaticAction, ensureKeys, submitAction, updateView]);
+  }, [appendTraceLines, buildAutomaticAction, ensureKeys, submitAction, submitNop, updateView]);
 
   const handleNetworkMessage = useCallback(async (message) => {
     if (message?.type !== POKER_ACTION_MESSAGE && message?.type !== POKER_GAME_MESSAGE) return false;
@@ -837,14 +841,10 @@ export function usePokerTable({
       if (applied) {
         const displayLines = wire.log_lines?.length > 0
           ? wire.log_lines
-          : [`NOP: ${wire.nop.reason}; current player is Player ${Number(wire.nop.current_player) + 1}`];
+          : [`Current player is Player ${Number(wire.nop.current_player) + 1}`];
         appendTraceLines(displayLines, wire.from);
         updateView({ force: true });
 
-        const currentPlayer = currentActingPlayer(game);
-        if (currentPlayer != null && currentPlayer !== game.clientState.player_index) {
-          submitNop(game, currentPlayer);
-        }
       }
       return true;
     }
@@ -863,13 +863,9 @@ export function usePokerTable({
         return true;
       }
 
-      const currentPlayer = hand?.get_current_state().get_current_player() ?? null;
-      if (currentPlayer != null && currentPlayer !== game.clientState.player_index) {
-        submitNop(game, currentPlayer);
-      }
     }
     return true;
-  }, [appendTraceLines, publishMessage, resetGame, submitNop, updateView]);
+  }, [appendTraceLines, publishMessage, resetGame, updateView]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
@@ -887,6 +883,25 @@ export function usePokerTable({
       [`Player ${player + 1} Bet: $${cappedAmount}`],
     );
   }, [ensureKeys, submitAction]);
+
+  const startNextHand = useCallback(() => {
+    const game = gameRef.current;
+    const hand = game?.clientState.current_hand();
+    if (!game || !hand?.get_current_state().is_finished()) return false;
+
+    game.clientState.table.start_hand(INITIAL_CHIPS, SMALL_BLIND);
+    game.clientState.hand_id += 1;
+    game.clientState.sequence = 0;
+    game.clientState.seen.clear();
+    game.shuffleTrace = null;
+    game.seenFinished = false;
+    protocolActionInFlightRef.current = null;
+
+    const events = game.clientState.table.drain_events?.() ?? [];
+    appendTraceLines(eventDisplayLines(events), game.clientState.player_index);
+    updateView({ force: true });
+    return true;
+  }, [appendTraceLines, updateView]);
 
   const submitBlind = useCallback(async () => {
     const game = await ensureKeys();
@@ -976,7 +991,8 @@ export function usePokerTable({
     handleNetworkMessage,
     submitProtocolAction,
     submitBet,
-  }), [handleNetworkMessage, submitBet, submitProtocolAction]);
+    startNextHand,
+  }), [handleNetworkMessage, startNextHand, submitBet, submitProtocolAction]);
 
   return [pokerTableState, pokerTableActions];
 }
