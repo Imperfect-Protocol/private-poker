@@ -404,6 +404,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
       chipStackSizes: [],
       payout: null,
       activePlayers: [],
+      allInPlayers: [],
     };
   }
 
@@ -431,6 +432,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
       }
     }
     const activePlayers = hand.betting_state?.active_players ?? [];
+    const allInPlayers = hand.betting_state?.allin_players ?? [];
     const payoutAmount = Number(hand.betting_state?.pot?.toString?.() ?? 0);
     const foldedWinner = activePlayers.filter(Boolean).length === 1
       ? activePlayers.findIndex(Boolean)
@@ -476,10 +478,12 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
           icon: 'coins',
         },
       activePlayers,
+      allInPlayers,
     };
   }
 
   const activePlayers = hand.betting_state?.active_players ?? [];
+  const allInPlayers = hand.betting_state?.allin_players ?? [];
 
   return {
     state: gameStateName(pokerState),
@@ -492,6 +496,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
     chipStackSizes: chipStackSizes(chipStacks(hand)),
     payout: null,
     activePlayers,
+    allInPlayers,
   };
 }
 
@@ -529,16 +534,22 @@ function actionSnapshotFromState({
   const stateName = protocolActionState?.state;
   const isMyTurn = protocolActionState?.seat === playerIndex;
   const activePlayers = currentGameState?.activePlayers ?? [];
+  const allInPlayers = currentGameState?.allInPlayers ?? [];
   const isFolded = activePlayers[playerIndex] === false;
-  const waitingForBet = BETTING_UI_STATES.has(stateName) && isMyTurn && !isFolded;
-  const waitingForSmallBlind = stateName === 'SmallBlind' && isMyTurn;
-  const waitingForBigBlind = stateName === 'BigBlind' && isMyTurn;
+  const isAllIn = allInPlayers[playerIndex] === true;
+  const waitingForBet = BETTING_UI_STATES.has(stateName) && isMyTurn && !isFolded && !isAllIn;
+  const waitingForSmallBlind = stateName === 'SmallBlind' && isMyTurn && !isAllIn;
+  const waitingForBigBlind = stateName === 'BigBlind' && isMyTurn && !isAllIn;
   const waitingForBlind = waitingForSmallBlind || waitingForBigBlind;
-  const blindAmount = waitingForSmallBlind
+  const availableChips = Number(currentGameState?.maxBet ?? viewPatch?.max_bet ?? INITIAL_CHIPS);
+  const requiredBlindAmount = waitingForSmallBlind
     ? Number(viewPatch?.small_blind ?? SMALL_BLIND)
     : waitingForBigBlind
       ? Number(viewPatch?.big_blind ?? SMALL_BLIND * 2)
       : Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND);
+  const blindAmount = waitingForBlind
+    ? Math.max(0, Math.min(requiredBlindAmount, availableChips))
+    : requiredBlindAmount;
   const actionMinBet = waitingForBlind
     ? blindAmount
     : Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND);
@@ -549,10 +560,10 @@ function actionSnapshotFromState({
     showActionBar: waitingForBet || waitingForBlind,
     waitingForBet,
     waitingForBlind,
-    canAct: isMyTurn && !isFolded,
+    canAct: isMyTurn && !isFolded && !isAllIn,
     stateLabel: viewPatch?.state_label ?? previousSnapshot.stateLabel,
     minBet: actionMinBet,
-    maxBet: Number(currentGameState?.maxBet ?? viewPatch?.max_bet ?? INITIAL_CHIPS),
+    maxBet: availableChips,
     step: Number(currentGameState?.step ?? viewPatch?.bet_step ?? SMALL_BLIND),
     actionAmount: waitingForBlind ? blindAmount : actionMinBet,
     primaryLabel: waitingForSmallBlind
@@ -601,11 +612,14 @@ export function usePokerTable({
       minBet: 0,
       maxBet: 0,
       step: 0,
+      activePlayers: [],
+      allInPlayers: [],
     },
     protocolActionState: null,
     viewPatch: {},
   });
   const [gameMessages, setGameMessages] = useState([]);
+  const [terminalResult, setTerminalResult] = useState(null);
   const gameRef = useRef(null);
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
@@ -671,6 +685,7 @@ export function usePokerTable({
 
   useEffect(() => {
     resetGame();
+    setTerminalResult(null);
   }, [resetGame]);
 
   const updateView = useCallback(({ force = false } = {}) => {
@@ -889,6 +904,22 @@ export function usePokerTable({
     const initialChips = nextStacks.length > 0
       ? nextStacks
       : Array(game.clientState.table.get_current_player_count()).fill(INITIAL_CHIPS);
+    const playerIndex = game.clientState.player_index;
+    const playerChips = Number(initialChips[playerIndex] ?? 0);
+    const playersWithChips = initialChips.filter((chips) => Number(chips) > 0).length;
+
+    if (playerChips <= 0) {
+      setTerminalResult({ type: 'lose', chips: 0 });
+      updateView({ force: true });
+      return false;
+    }
+
+    if (playersWithChips === 1) {
+      setTerminalResult({ type: 'win', chips: playerChips });
+      updateView({ force: true });
+      return false;
+    }
+
     const smallBlind = hand.get_small_blind();
     const dealerSeatNumber = nextDealerSeatNumber(game.clientState.table);
 
@@ -1070,7 +1101,8 @@ export function usePokerTable({
     ...snapshot,
     gameMessages,
     actionBarProps,
-  }), [actionBarProps, gameMessages, snapshot]);
+    terminalResult,
+  }), [actionBarProps, gameMessages, snapshot, terminalResult]);
 
   const pokerTableActions = useMemo(() => ({
     handleNetworkMessage,

@@ -7,6 +7,7 @@ import ActiveTableView from '@/components/table/ActiveTableView';
 import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
 import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
 import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
+import TerminalResultDialog from '@/components/table_screen/dialogs/TerminalResultDialog';
 import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
 import { submitConsoleLine } from '@/lib/crum_pkr';
 
@@ -250,6 +251,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     });
   };
 
+  const handleCloseTab = () => {
+    window.close();
+  };
+
   return (
     <ActiveTableView
       table={displayTable}
@@ -308,6 +313,13 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
           operator={topUpRequest.operator}
           requiredAmount={topUpRequest.requiredAmount}
           onConfirm={topUpRequest.resolve}
+        />
+      )}
+
+      {pokerTableState.terminalResult && (
+        <TerminalResultDialog
+          result={pokerTableState.terminalResult}
+          onCloseTab={handleCloseTab}
         />
       )}
     </ActiveTableView>
