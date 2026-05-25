@@ -86,7 +86,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     addDebugMessage({
       text: activity.text,
       sender: 'RTC',
-      level: activity.text?.includes('failed') || activity.text?.includes('error') ? 'error' : 'info',
+      level: /failed|error|invalid signature/i.test(activity.text ?? '') ? 'error' : 'info',
     });
   }, [addDebugMessage]);
 
@@ -256,7 +256,14 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
   const handleSend = (e) => {
     e.preventDefault();
-    if (!input) return;
+    const command = input.trim();
+    if (!command) return;
+
+    if (command.toLowerCase() === '/badsig') {
+      table.armBadSignatureOnce?.();
+      setInput('');
+      return;
+    }
 
     if (pokerTableActions.submitChat(input)) {
       setInput('');

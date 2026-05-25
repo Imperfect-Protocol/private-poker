@@ -91,7 +91,7 @@ export function useTable({
     isTableFull,
     tableCapacity,
   });
-  const [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession] = network;
+  const [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession, armBadSignatureOnce] = network;
   const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
   const mySeatNo = useMemo(() => (
@@ -224,6 +224,7 @@ export function useTable({
     playerNetworkStates: networkSnapshot?.peerStates ?? {},
     prepareNetworkSession,
     publishMessage,
+    armBadSignatureOnce,
     retryInboundConnection,
     seats,
     subscribeTo,

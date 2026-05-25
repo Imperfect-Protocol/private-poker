@@ -16,17 +16,6 @@ function makePlayersKey(players = []) {
     .join('|');
 }
 
-function makeSeatsKey(seats = []) {
-  return seats
-    .map((seat) => [
-      seat?.seatNo ?? '',
-      normalizeAddress(seat?.playerAddress),
-      normalizeAddress(seat?.operator),
-      seat?.announcePublicKey ?? '',
-    ].join('/'))
-    .join('|');
-}
-
 function makeSessionConfigKey({
   playerAddress,
   operator,
@@ -70,7 +59,6 @@ export function useNetwork({
   const operatorPrivateKey = blsKeys?.operatorPrivateKey;
   const operator = blsKeys?.operator;
   const loggedUpdateKeysRef = useRef(new Set());
-  const seatsKey = makeSeatsKey(seats);
   const players = useMemo(
     () => seats
       .filter((seat) => seat?.playerAddress)
@@ -80,22 +68,16 @@ export function useNetwork({
         operator: seat.operator,
         annoncePublicKey: seat.announcePublicKey,
       })),
-    [seatsKey],
+    [seats],
   );
   const playersKey = makePlayersKey(players);
   const mySeatAnnouncePublicKey = players.find(
     (player) => normalizeAddress(player.playerAddress) === normalizeAddress(playerAddress),
   )?.annoncePublicKey;
-  const sendSignalRef = useRef(sendSignal);
-  const onActivityRef = useRef(onActivity);
-
-  sendSignalRef.current = sendSignal;
-  onActivityRef.current = onActivity;
-
   const [session] = useState(
     () => new PokerRtcSession({
-      sendSignal: (...args) => sendSignalRef.current(...args),
-      onActivity: (...args) => onActivityRef.current?.(...args),
+      sendSignal: () => {},
+      onActivity: () => {},
       onStateChange: () => {},
     }),
   );
@@ -120,8 +102,8 @@ export function useNetwork({
     }
 
     session.setCallbacks({
-      sendSignal: (...args) => sendSignalRef.current(...args),
-      onActivity: (...args) => onActivityRef.current?.(...args),
+      sendSignal,
+      onActivity,
       onStateChange: setNetworkSnapshot,
     });
     session.update({
@@ -139,12 +121,16 @@ export function useNetwork({
   }, [
     isTableFull,
     lobbyId,
+    onActivity,
     playerAddress,
+    players,
     playersKey,
     privateKey,
     publicKey,
     operatorPrivateKey,
     operator,
+    sendSignal,
+    session,
     tableCapacity,
     tableId,
   ]);
@@ -162,6 +148,10 @@ export function useNetwork({
   const publishMessage = useCallback((message) => {
     console.log('session.publishMessage()', message);
     session.publishMessage(message);
+  }, [session]);
+
+  const armBadSignatureOnce = useCallback(() => {
+    session.armBadSignatureOnce();
   }, [session]);
 
   const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback, options = {}) => {
@@ -195,7 +185,8 @@ export function useNetwork({
     lobbyId,
     mySeatAnnouncePublicKey,
     playerAddress,
-    playersKey,
+    players,
+    session,
     tableCapacity,
     tableDetails,
     tableId,
@@ -222,11 +213,12 @@ export function useNetwork({
     isTableFull,
     lobbyId,
     playerAddress,
-    playersKey,
+    players,
+    session,
     tableCapacity,
     tableDetails,
     tableId,
   ]);
 
-  return [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession];
+  return [publishMessage, subscribeTo, networkSnapshot, prepareNetworkSession, armBadSignatureOnce];
 }

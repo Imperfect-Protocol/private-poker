@@ -1015,7 +1015,22 @@ export function usePokerTable({
     }
 
     if (wire.nop) {
-      game.clientState.apply_nop_wire(wire);
+      const applied = game.clientState.apply_nop_wire(wire);
+      if (!applied) return true;
+
+      const hand = game.clientState.current_hand();
+      const handState = hand?.get_current_state();
+      if (handState?.get_current_player() !== game.clientState.player_index) {
+        submitNop(game, handState?.get_current_player());
+        return true;
+      }
+
+      if (!isHumanActionState(handState)) {
+        await submitProtocolAction();
+        return true;
+      }
+
+      updateView({ force: true });
       return true;
     }
 
