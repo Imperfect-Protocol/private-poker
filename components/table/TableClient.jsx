@@ -8,6 +8,7 @@ import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
 import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
 import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
 import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
+import { submitConsoleLine } from '@/lib/crum_pkr';
 
 const readCreatedTableSnapshot = (tableId) => {
   if (typeof window === 'undefined') return null;
@@ -25,6 +26,18 @@ const readCreatedTableSnapshot = (tableId) => {
 };
 
 const formatSeatAddress = (address) => (address ? address.slice(2, 4).toUpperCase() : 'Peer');
+
+const rtcMessageLabels = (message) => {
+  if (!message?.type) return ['Unknown RTC Message'];
+  if (message.type === 'CHAT') return [message.text ?? 'Chat Message'];
+  if (message.type === 'POKER_ACTION' || message.type === 'POKER_GAME_MESSAGE') {
+    if (message.wire?.log_lines?.length > 0) {
+      return message.wire.log_lines;
+    }
+    return [submitConsoleLine(message.wire?.submit) ?? 'Poker Action'];
+  }
+  return [message.type];
+};
 
 const POKER_PROTOCOL_UI_STATES = new Set([
   'Shuffling',
@@ -72,21 +85,20 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   }, [addDebugMessage]);
 
   const handleRtcMessage = useCallback((incoming, playerAddress) => {
-    if (incoming?.type === 'POKER_ACTION') {
+    const sender = formatSeatAddress(playerAddress);
+    const messageLabels = rtcMessageLabels(incoming);
+
+    if (incoming?.type !== 'CHAT') {
+      messageLabels.forEach((text) => addDebugMessage({ text, sender }));
+    }
+
+    if (incoming?.type === 'POKER_ACTION' || incoming?.type === 'POKER_GAME_MESSAGE') {
       pokerTableRef.current?.handleNetworkMessage(incoming);
       return;
     }
 
-    if (incoming.type === 'GAME_UPDATE') {
-      tableRef.current?.setTableData((prev) => ({
-        ...prev,
-        current_hand: {
-          ...prev.current_hand,
-          ...incoming.data,
-        },
-      }));
-    } else if (incoming.type === 'CHAT') {
-      addDebugMessage({ text: incoming.text, sender: formatSeatAddress(playerAddress) });
+    if (incoming.type === 'CHAT') {
+      messageLabels.forEach((text) => addDebugMessage({ text, sender }));
     }
   }, [addDebugMessage]);
 
@@ -233,25 +245,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   };
 
   const handleDealTest = () => {
-    const suits = ['h', 'd', 's', 'c'];
-    const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
-
-    const getRandomCard = () => ranks[Math.floor(Math.random() * ranks.length)] + suits[Math.floor(Math.random() * suits.length)];
-    const newFlop = getRandomCard() + getRandomCard() + getRandomCard();
-    const newHand = getRandomCard() + getRandomCard();
-
-    table.setTableData((prev) => ({
-      ...prev,
-      current_hand: {
-        ...prev.current_hand,
-        community_cards: newFlop,
-        player_cards: newHand,
-      },
-    }));
-
-    table.publishMessage({
-      type: 'GAME_UPDATE',
-      data: { community_cards: newFlop },
+    addDebugMessage({
+      text: 'Direct state broadcast is disabled; gameplay sync uses PokerHand submit calls.',
+      sender: 'Game',
+      level: 'warn',
     });
   };
 

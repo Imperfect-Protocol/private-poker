@@ -13,6 +13,7 @@ import {
   PokerActionEnvelopeWire,
   PokerClientState,
   SMALL_BLIND,
+  poker_action_wire_to_submit,
 } from '@/lib/crum_net';
 import {
   POKER_HAND_STATE_BET,
@@ -21,11 +22,14 @@ import {
   POKER_HAND_STATE_SMALL_BLIND,
   POKER_HOLDEM_ROUNDS,
   PokerTable,
+  communityCardConsoleLines,
+  playerCardConsoleLines,
+  playerOwnCardsConsoleString,
 } from '@/lib/crum_pkr';
 import { holdemRank, holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
 const POKER_ACTION_MESSAGE = 'POKER_ACTION';
-const NEXT_HAND_DELAY_MS = 10_000;
+const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
 const MIN_SEND_JITTER_MS = 100;
 const MAX_SEND_JITTER_MS = 500;
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
@@ -108,28 +112,33 @@ function encodeWire(wire) {
       break;
   }
 
+  encoded.submit = poker_action_wire_to_submit(encoded.action);
+  delete encoded.action;
+
   return encoded;
 }
 
 function decodeWire(encoded) {
-  const action = { ...encoded.action };
+  const action = encoded.action ? { ...encoded.action } : null;
 
-  switch (action.type) {
-    case 'SubmitShuffledDeck':
-      action.deck_g1_compressed = decodeCardSet(action.deck_g1_compressed);
-      break;
-    case 'SubmitPlayerCards':
-    case 'SubmitShowdownCards':
-      action.player_cards_g1_compressed = action.player_cards_g1_compressed.map(decodeCardSet);
-      break;
-    case 'SubmitCommunityCards':
-      action.cards_g1_compressed = decodeCardSet(action.cards_g1_compressed);
-      break;
-    case 'SubmitPublicKey':
-      action.public_key_g2_compressed = bytesPoint(action.public_key_g2_compressed);
-      break;
-    default:
-      break;
+  if (action) {
+    switch (action.type) {
+      case 'SubmitShuffledDeck':
+        action.deck_g1_compressed = decodeCardSet(action.deck_g1_compressed);
+        break;
+      case 'SubmitPlayerCards':
+      case 'SubmitShowdownCards':
+        action.player_cards_g1_compressed = action.player_cards_g1_compressed.map(decodeCardSet);
+        break;
+      case 'SubmitCommunityCards':
+        action.cards_g1_compressed = decodeCardSet(action.cards_g1_compressed);
+        break;
+      case 'SubmitPublicKey':
+        action.public_key_g2_compressed = bytesPoint(action.public_key_g2_compressed);
+        break;
+      default:
+        break;
+    }
   }
 
   return new PokerActionEnvelopeWire({
@@ -139,25 +148,46 @@ function decodeWire(encoded) {
     sequence: encoded.sequence,
     expected_state: encoded.expected_state,
     action,
+    submit: action ? encoded.submit : decodeSubmit(encoded.submit),
     log_lines: encoded.log_lines ?? [],
   });
 }
 
-function makePokerTable(numPlayers, dealerButton = 0) {
+function decodeSubmit(submit) {
+  if (!submit) return null;
+  const args = [...(submit.args ?? submit.data?.args ?? [])];
+
+  switch (submit.method) {
+    case 'submit_shuffled_deck':
+      args[1] = decodeCardSet(args[1]);
+      break;
+    case 'submit_player_cards':
+    case 'submit_player_cards_showdown':
+      args[1] = args[1].map(decodeCardSet);
+      break;
+    case 'submit_community_cards':
+      args[2] = decodeCardSet(args[2]);
+      break;
+    case 'submit_public_key':
+      args[1] = bytesPoint(args[1]);
+      break;
+    default:
+      break;
+  }
+
+  return {
+    method: submit.method,
+    args,
+  };
+}
+
+function makePokerTable(numPlayers) {
   const table = PokerTable.new(numPlayers, POKER_HOLDEM_ROUNDS);
   for (let player = 1; player <= numPlayers; player += 1) {
     table.join(player);
   }
-  table.dealer_button = dealerButton;
   table.start_hand(INITIAL_CHIPS, SMALL_BLIND);
   return table;
-}
-
-function cardsToCompact(cards) {
-  return cards
-    .filter(Boolean)
-    .map((card) => card.toString())
-    .join('');
 }
 
 function cardsToStrings(cards) {
@@ -201,87 +231,10 @@ function chipStackSizes(stacks) {
   return stacks.map(chipStackSize);
 }
 
-function stateLabel(hand) {
-  const state = hand?.get_current_state().to_enum();
-  if (!state) return 'Waiting';
-  switch (state.type) {
-    case 'Shuffle':
-      return `Shuffle on Player ${state.player + 1}`;
-    case 'SmallBlind':
-      return `Small Blind on Player ${state.player + 1}`;
-    case 'BigBlind':
-      return `Big Blind on Player ${state.player + 1}`;
-    case 'Bet':
-      return `Bet on Player ${state.player + 1}`;
-    case 'UnmaskHoleCards':
-      return `Unmask Hole Cards on Player ${state.player + 1}`;
-    case 'UnmaskCommunityCards':
-      return `Round ${state.round + 1} Unmask Community Cards on Player ${state.player + 1}`;
-    case 'UnmaskShowdown':
-      return `Unmask Showdown on Player ${state.player + 1}`;
-    case 'SubmitPublicKey':
-      return `Submit Public Key on Player ${state.player + 1}`;
-    case 'Finished':
-      return 'Hand ended';
-    default:
-      return state.type;
-  }
-}
-
-function tableViewPatch(clientState, signingKey) {
+function tableViewPatch(clientState, signingKey, viewerSeatNo = null) {
   const hand = clientState?.current_hand();
   if (!hand) return {};
-
-  const deck = hand.get_poker_deck();
-  const handState = hand.get_current_state();
-  const pokerState = handState.to_enum();
-  const communityCards = [];
-  for (let round = 0; round < POKER_HOLDEM_ROUNDS; round += 1) {
-    const cards = hand.get_community_cards(round);
-    if (cards) {
-      communityCards.push(...deck.unmasked_cards(cards));
-    }
-  }
-
-  let playerCards = '';
-  try {
-    const mine = hand.get_player_cards()[clientState.player_index]?.clone();
-    if (mine && signingKey) {
-      mine.unmask(signingKey);
-      playerCards = cardsToCompact(deck.unmasked_cards(mine));
-    }
-  } catch {
-    playerCards = '';
-  }
-
-  const playerCardsBySeat = {};
-  if (
-    pokerState.type === 'UnmaskShowdown'
-    || pokerState.type === 'SubmitPublicKey'
-    || pokerState.type === 'Finished'
-  ) {
-    hand.get_player_cards().forEach((cardSet, seat) => {
-      try {
-        const compact = cardsToCompact(deck.unmasked_cards(cardSet));
-        if (compact) playerCardsBySeat[seat] = compact;
-      } catch {
-        // Cards for this seat are still masked locally.
-      }
-    });
-  }
-
-  return {
-    current_player: handState.get_current_player().toString(),
-    current_state: handState.to_tuple().join(':'),
-    state_label: stateLabel(hand),
-    current_pot: hand.betting_state?.pot?.toString?.() ?? '0',
-    min_bet: safeCallAmount(hand, clientState.player_index),
-    max_bet: safeChipsRemaining(hand, clientState.player_index),
-    bet_step: hand.get_small_blind(),
-    community_cards: cardsToCompact(communityCards),
-    player_cards: playerCards,
-    player_cards_by_seat: playerCardsBySeat,
-  };
+  return clientState.table.to_display_data(viewerSeatNo, signingKey).current_hand;
 }
 
 function streetName(round) {
@@ -297,6 +250,83 @@ function streetName(round) {
     default:
       return 'UnknownStreet';
   }
+}
+
+function eventRoundName(round) {
+  switch (round) {
+    case 0:
+      return 'Blinds';
+    case 1:
+      return 'PreFlop';
+    case 2:
+      return 'Flop';
+    case 3:
+      return 'Turn';
+    case 4:
+      return 'River';
+    default:
+      return 'UnknownStreet';
+  }
+}
+
+function eventDisplayLine(event) {
+  if (!event?.type) return null;
+  const seat = event.seat_number == null ? null : Number(event.seat_number) + 1;
+  switch (event.type) {
+    case 'hand_started':
+      return `Hand ${event.hand_number ?? ''} started`.trim();
+    case 'deck_shuffled':
+      return `Deck Shuffled on Player ${seat}`;
+    case 'round_started':
+      return `Round Started: ${eventRoundName(Number(event.round_number ?? 0))} on Player ${seat}`;
+    case 'small_blind_posted':
+      return `Small Blind Posted by Player ${seat}: $${event.small_blind}`;
+    case 'big_blind_posted':
+      return `Big Blind Posted by Player ${seat}: $${event.big_blind}`;
+    case 'bet':
+      return `Player ${seat} Bet: $${event.amount}`;
+    case 'fold':
+      return `Player ${seat} Fold`;
+    case 'hand_ended':
+      return `Hand Ended; Player ${seat} submits public key first`;
+    case 'hand_result':
+      return `Hand Result: Player ${seat} pot $${event.pot_size}`;
+    default:
+      return null;
+  }
+}
+
+function eventDisplayLines(events, fallbackLines = []) {
+  const lines = (events ?? []).map(eventDisplayLine).filter(Boolean);
+  return lines.length > 0 ? lines : fallbackLines;
+}
+
+function botTraceLines(game, action, result, fallbackLines = []) {
+  const hand = game?.clientState.current_hand();
+  if (!hand) return fallbackLines;
+
+  if (action.type === 'SubmitBet') {
+    return [
+      `Player ${action.player + 1} (${playerOwnCardsConsoleString(action.player, hand, game.signingKey)}) Bet: $${action.amount}`,
+    ];
+  }
+
+  const events = result?.events ?? [];
+  const startedRound = events.find((event) => event.type === 'round_started');
+  if (startedRound?.round_number === 1) {
+    return [...fallbackLines, ...playerCardConsoleLines(hand)];
+  }
+  if (startedRound?.round_number > 1) {
+    return [...fallbackLines, ...communityCardConsoleLines(hand)];
+  }
+  if (events.some((event) => event.type === 'hand_ended')) {
+    return [...fallbackLines, ...playerCardConsoleLines(hand)];
+  }
+  if (events.some((event) => event.type === 'hand_result')) {
+    return [...fallbackLines, ...final_lines(game.clientState.table)];
+  }
+
+  return fallbackLines;
 }
 
 function gameStateName(pokerState) {
@@ -500,7 +530,6 @@ export function usePokerTable({
   const gameRef = useRef(null);
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
-  const nextHandTimeoutRef = useRef(null);
   const protocolActionInFlightRef = useRef(null);
 
   const appendGameLog = useCallback((line) => {
@@ -511,21 +540,13 @@ export function usePokerTable({
   const tableMaxSeats = table?.tableData?.maxSeats;
   const currentSeatNo = table?.currentSeat?.seatNo;
 
-  const clearNextHandTimeout = useCallback(() => {
-    if (nextHandTimeoutRef.current != null) {
-      clearTimeout(nextHandTimeoutRef.current);
-      nextHandTimeoutRef.current = null;
-    }
-  }, []);
-
   const resetGame = useCallback(() => {
     const numPlayers = Number(tableMaxSeats || 0);
-    if (!numPlayers || currentSeatNo == null) return null;
+    if (!numPlayers || tableId == null) return null;
 
-    clearNextHandTimeout();
     const pokerTable = makePokerTable(numPlayers);
     const clientState = PokerClientState.new(
-      currentSeatNo,
+      currentSeatNo ?? 0,
       Number(tableId),
       HAND_ID,
       pokerTable,
@@ -536,12 +557,9 @@ export function usePokerTable({
       publicKey: null,
       shuffleTrace: null,
       seenFinished: false,
-      handId: HAND_ID,
-      dealerButton: 0,
-      nextHandScheduled: false,
     };
     return gameRef.current;
-  }, [clearNextHandTimeout, currentSeatNo, tableId, tableMaxSeats]);
+  }, [currentSeatNo, tableId, tableMaxSeats]);
 
   useEffect(() => {
     resetGame();
@@ -552,7 +570,8 @@ export function usePokerTable({
     const hand = game?.clientState.current_hand();
     if (!game || !hand) return null;
 
-    const patch = tableViewPatch(game.clientState, game.signingKey);
+    const viewerSeatNo = currentSeatNo ?? null;
+    const patch = tableViewPatch(game.clientState, game.signingKey, viewerSeatNo);
     const currentGameState = currentGameStateFrom(game);
     const protocolActionState = protocolActionStateFrom(game);
     const nextCurrentGameState = !force && shallowEqual(
@@ -570,7 +589,7 @@ export function usePokerTable({
       protocolActionState,
       viewPatch: nextPatch,
       previousSnapshot: lastSnapshotRef.current,
-      playerIndex: game.clientState.player_index,
+      playerIndex: viewerSeatNo,
     });
 
     if (force || !shallowEqual(lastSnapshotRef.current, nextSnapshot)) {
@@ -578,12 +597,13 @@ export function usePokerTable({
       setSnapshot(nextSnapshot);
     }
     return nextSnapshot;
-  }, []);
+  }, [currentSeatNo]);
 
   const ensureKeys = useCallback(async () => {
     const game = gameRef.current ?? resetGame();
     if (!game) return null;
     if (game.signingKey && game.publicKey) return game;
+    if (currentSeatNo == null || !prepareNetworkSession) return null;
 
     const keys = await prepareNetworkSession();
     const signingKey = make_signing_key_from_seed(hexToBytes(keys.privateKey));
@@ -594,11 +614,11 @@ export function usePokerTable({
     };
     gameRef.current = nextGame;
     return nextGame;
-  }, [prepareNetworkSession, resetGame]);
+  }, [currentSeatNo, prepareNetworkSession, resetGame]);
 
   const publishWire = useCallback((wire) => {
     const message = {
-      type: POKER_ACTION_MESSAGE,
+      type: POKER_GAME_MESSAGE,
       wire: encodeWire(wire),
     };
     setTimeout(() => publishMessage(message), randomSendJitter());
@@ -609,58 +629,13 @@ export function usePokerTable({
     if (!game) return null;
 
     const envelope = game.clientState.submit_local_action(action);
-    const wire = envelope.to_wire(logLines);
+    const displayLines = botTraceLines(game, action, envelope.result, logLines);
+    const wire = envelope.to_wire(displayLines);
     publishWire(wire);
-    logLines.forEach(appendGameLog);
+    displayLines.forEach(appendGameLog);
     updateView();
     return wire;
   }, [appendGameLog, publishWire, updateView]);
-
-  const startNextHand = useCallback(({
-    handId: forcedHandId,
-    dealerButton: forcedDealerButton,
-    forceDisplayState = false,
-  } = {}) => {
-    const game = gameRef.current;
-    if (!game) return;
-
-    const numPlayers = Number(
-      game.clientState.table.get_current_player_count?.() || tableMaxSeats || 0,
-    );
-    if (!numPlayers) return;
-
-    clearNextHandTimeout();
-    const dealerButton = forcedDealerButton ?? ((game.dealerButton ?? 0) + 1) % numPlayers;
-    const handId = forcedHandId ?? (game.handId ?? game.clientState.hand_id ?? HAND_ID) + 1;
-    if (handId <= game.clientState.hand_id) return;
-    if (!game.clientState.current_hand()?.get_current_state().is_finished()) return;
-
-    game.clientState.table.dealer_button = dealerButton;
-    game.clientState.table.start_hand(INITIAL_CHIPS, SMALL_BLIND);
-    game.clientState.hand_id = handId;
-    game.clientState.sequence = 0;
-    game.clientState.seen = new Set();
-
-    game.dealerButton = dealerButton;
-    game.handId = handId;
-    game.shuffleTrace = null;
-    game.seenFinished = false;
-    game.nextHandScheduled = false;
-
-    const nextSnapshot = updateView({ force: forceDisplayState });
-    return nextSnapshot;
-  }, [clearNextHandTimeout, tableMaxSeats, updateView]);
-
-  const scheduleNextHand = useCallback(() => {
-    const game = gameRef.current;
-    if (!game || game.nextHandScheduled) return;
-
-    game.nextHandScheduled = true;
-    nextHandTimeoutRef.current = setTimeout(() => {
-      nextHandTimeoutRef.current = null;
-      startNextHand();
-    }, NEXT_HAND_DELAY_MS);
-  }, [startNextHand]);
 
   const buildAutomaticAction = useCallback((game) => {
     const hand = game.clientState.current_hand();
@@ -744,7 +719,6 @@ export function usePokerTable({
         game.seenFinished = true;
         final_lines(game.clientState.table).forEach(appendGameLog);
       }
-      scheduleNextHand();
       updateView();
       return null;
     }
@@ -775,33 +749,26 @@ export function usePokerTable({
         protocolActionInFlightRef.current = null;
       }
     }
-  }, [appendGameLog, buildAutomaticAction, ensureKeys, scheduleNextHand, submitAction, updateView]);
+  }, [appendGameLog, buildAutomaticAction, ensureKeys, submitAction, updateView]);
 
   const handleNetworkMessage = useCallback(async (message) => {
-    const game = await ensureKeys();
+    if (message?.type !== POKER_ACTION_MESSAGE && message?.type !== POKER_GAME_MESSAGE) return false;
+
+    const game = gameRef.current ?? resetGame();
     if (!game) return true;
 
-    if (message?.type !== POKER_ACTION_MESSAGE) return false;
-
     const wire = decodeWire(message.wire);
-    if (
-      wire.hand_id > game.clientState.hand_id
-      && game.clientState.current_hand()?.get_current_state().is_finished()
-    ) {
-      startNextHand({
-        handId: wire.hand_id,
-        forceDisplayState: true,
-      });
-    }
     const envelope = wire.to_envelope();
-    const applied = game.clientState.apply_envelope(envelope);
+    const { applied, result } = game.clientState.apply_envelope_result(envelope);
     if (applied) {
-      wire.log_lines.forEach(appendGameLog);
+      const displayLines = wire.log_lines?.length > 0
+        ? wire.log_lines
+        : eventDisplayLines(result?.events);
+      displayLines.forEach(appendGameLog);
       const hand = game.clientState.current_hand();
       updateView({ force: true });
       if (hand?.get_current_state().is_finished()) {
         setTimeout(() => publishMessage(message), randomSendJitter());
-        scheduleNextHand();
         return true;
       }
 
@@ -810,7 +777,7 @@ export function usePokerTable({
       }
     }
     return true;
-  }, [appendGameLog, ensureKeys, publishMessage, scheduleNextHand, startNextHand, updateView]);
+  }, [appendGameLog, publishMessage, resetGame, updateView]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
@@ -861,8 +828,6 @@ export function usePokerTable({
       updateView();
     });
   }, [ensureKeys, networkSnapshot?.status, table?.currentSeat?.seatNo, updateView]);
-
-  useEffect(() => clearNextHandTimeout, [clearNextHandTimeout]);
 
   const actionBarProps = useMemo(() => {
     const remainingChips = Math.max(Number(snapshot.maxBet ?? 0), 0);

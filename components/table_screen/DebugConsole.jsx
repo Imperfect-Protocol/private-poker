@@ -59,7 +59,7 @@ export default function DebugConsole({
         onClick={onDealTest}
         className="mt-2 w-full py-1 bg-teal-600 text-[9px] font-black uppercase tracking-tighter hover:bg-teal-400 text-slate-950 transition-colors"
       >
-        Force Flop Deal (Broadcast)
+        State Broadcast Disabled
       </button>
       <div ref={messageListRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
         {messages.map((message, index) => {
