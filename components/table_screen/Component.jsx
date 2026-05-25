@@ -26,6 +26,15 @@ export default function TableScreen({
   const [nextHandCountdown, setNextHandCountdown] = useState(10);
   const showNextHandCountdown = showResult && Boolean(gameState?.canStartNextHand);
   const countdownText = `00:${String(nextHandCountdown).padStart(2, '0')}`;
+  const winnerAddress = gameState?.resultWinner == null
+    ? null
+    : tableData?.players?.[gameState.resultWinner]?.playerAddress;
+  const winnerLabel = winnerAddress ? winnerAddress.slice(2, 4).toUpperCase() : null;
+  const resultRankText = gameState?.resultRank
+    ? gameState.resultText === 'You Win'
+      ? gameState.resultRank
+      : `${winnerLabel ?? 'Winner'} Wins With ${gameState.resultRank}`
+    : null;
   const countdownCompletedRef = useRef(false);
 
   useEffect(() => {
@@ -61,16 +70,33 @@ export default function TableScreen({
         <div className="relative w-full bottom-28 max-w-4xl aspect-[16/9] mx-auto mt-20 mb-0">
           <Background />
 
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-            <CommunityCards cards={communityCards} />
+          {showResult && (
+            <div className="absolute left-1/2 top-[-36%] z-30 -translate-x-1/2 pointer-events-none">
+              <div className={`text-center text-4xl md:text-6xl font-black uppercase tracking-widest italic drop-shadow-[0_0_28px_rgba(255,255,255,0.3)] ${gameState.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300'}`}>
+                {gameState.resultText}
+              </div>
+              {resultRankText && (
+                <div className="mt-2 text-center text-sm md:text-base font-black uppercase tracking-[0.25em] text-white drop-shadow-[0_0_18px_rgba(20,184,166,0.35)]">
+                  {resultRankText}
+                </div>
+              )}
+            </div>
+          )}
 
-            <div className="text-center group pointer-events-auto">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="grid grid-cols-[10rem_22rem] items-center gap-4">
+              <div className="text-center group pointer-events-auto">
               <div className="bg-slate-900/90 border-2 border-teal-500/40 px-8 py-3 rounded-2xl backdrop-blur-xl shadow-[0_0_30px_rgba(20,184,166,0.2)]">
                 <p className="text-[10px] text-teal-400 font-mono tracking-widest uppercase mb-1">Current Pot</p>
-                <p className="text-3xl font-black text-white font-mono tracking-tighter italic">
-                  {tableData?.current_hand?.current_pot || tableData?.total_buyin || "0"}
-                </p>
+                <div className="flex items-center justify-center gap-2 text-white">
+                  <Coins size={28} className="text-yellow-200 drop-shadow-[0_0_10px_rgba(250,204,21,0.35)]" />
+                  <p className="text-3xl font-black font-mono tracking-tighter italic">
+                    {tableData?.current_hand?.current_pot || tableData?.total_buyin || "0"}
+                  </p>
+                </div>
               </div>
+              </div>
+              <CommunityCards cards={communityCards} />
             </div>
           </div>
 
@@ -80,21 +106,6 @@ export default function TableScreen({
             playerNetworkStates={playerNetworkStates}
             gameState={gameState}
           />
-
-          {showResult && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-              <div className="flex flex-col items-center gap-3">
-                <div className={`text-6xl md:text-8xl font-black uppercase tracking-widest italic drop-shadow-[0_0_35px_rgba(255,255,255,0.35)] ${gameState.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300'}`}>
-                  {gameState.resultText}
-                </div>
-                {gameState.resultRank && (
-                  <div className="rounded-full border border-white/20 bg-slate-950/80 px-5 py-2 text-sm md:text-base font-black uppercase tracking-[0.35em] text-white shadow-[0_0_28px_rgba(20,184,166,0.25)] backdrop-blur-xl">
-                    {gameState.resultRank}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {gameState?.payout && (
             <div className="absolute inset-0 z-20 pointer-events-none">

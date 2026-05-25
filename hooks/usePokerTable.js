@@ -431,6 +431,7 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
       winner: showdown.winner,
       resultText: showdown.winner == null ? null : playerWon ? 'You Win' : 'You Lose',
       resultRank: showdown.winner == null ? null : hands[showdown.winner]?.rank ?? null,
+      resultWinner: showdown.winner,
       payout: showdown.winner == null
         ? null
         : {

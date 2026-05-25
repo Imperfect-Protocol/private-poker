@@ -44,6 +44,7 @@ export default function TablePlayer({
           isMe={isMe}
           isEmptySeat={isEmptySeat}
           isTheirTurn={isTheirTurn || isWinner}
+          isWinner={isWinner}
         />
 
         {!isEmptySeat && chipStack != null && (
@@ -58,7 +59,7 @@ export default function TablePlayer({
           </div>
         )}
 
-        <div className={`mt-3 bg-slate-900/95 border px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10 ${isEmptySeat ? 'border-slate-700/60' : isWinner ? 'border-emerald-300/80 shadow-[0_0_24px_rgba(110,231,183,0.35)]' : 'border-teal-500/30'}`}>
+        <div className={`mt-3 bg-slate-900/95 border px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10 ${isEmptySeat ? 'border-slate-700/60' : 'border-teal-500/30'}`}>
           <Name player={player} isEmptySeat={isEmptySeat} />
           {handRank && (
             <div className={`mt-1 text-[9px] font-black uppercase tracking-widest ${isWinner ? 'text-emerald-200' : 'text-slate-300'}`}>
