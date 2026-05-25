@@ -24,7 +24,9 @@ export default function TablePlayer({
           <div className={`absolute flex gap-1 z-0 ${isMe ? '-top-12 md:-top-16' : '-top-6'}`}>
             {seatCards.length > 0 ? (
               seatCards.map((card, idx) => (
-                <Card key={`${card}-${idx}`} rank={card[0]} suit={card[1]} isHidden={false} size="lg" />
+                card
+                  ? <Card key={`${card}-${idx}`} rank={card[0]} suit={card[1]} isHidden={false} size="lg" />
+                  : <Card key={`hidden-${idx}`} isHidden size="lg" />
               ))
             ) : (
               <>

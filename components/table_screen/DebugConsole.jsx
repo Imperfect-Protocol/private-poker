@@ -2,6 +2,23 @@
 
 import { useEffect, useRef } from 'react';
 
+const SENDER_COLOR_CLASSES = [
+  'text-red-300',
+  'text-emerald-300',
+  'text-sky-300',
+  'text-purple-300',
+  'text-orange-300',
+  'text-lime-200',
+];
+
+function colorIndexForSender(sender = '') {
+  let hash = 0;
+  for (let index = 0; index < sender.length; index += 1) {
+    hash = (hash + sender.charCodeAt(index)) % SENDER_COLOR_CLASSES.length;
+  }
+  return hash;
+}
+
 export default function DebugConsole({
   tableId,
   messages = [],
@@ -21,6 +38,9 @@ export default function DebugConsole({
 
   const getMessageClassName = (message) => {
     if (message.sender === 'Me') return 'text-cyan-400';
+    if (message.sender && message.sender !== 'Game' && message.sender !== 'RTC') {
+      return SENDER_COLOR_CLASSES[colorIndexForSender(message.sender)];
+    }
     if (message.sender === 'RTC') {
       if (message.level === 'error') return 'text-red-300';
       if (message.level === 'warn') return 'text-amber-300';
@@ -50,23 +70,24 @@ export default function DebugConsole({
   };
 
   return (
-    <div className="absolute bottom-[0px] right-[0px] w-64 h-48 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-30">
+    <div className="absolute bottom-[0px] right-[0px] w-[30rem] h-60 bg-slate-900/90 border border-teal-500/20 rounded-lg flex flex-col overflow-hidden backdrop-blur-md shadow-2xl z-[75]">
       <div className="bg-slate-950 px-3 py-1 border-b border-teal-500/10 flex justify-between">
-        <span className="text-[9px] font-mono text-teal-500 uppercase">Comm_Link</span>
-        <span className="text-[9px] font-mono text-slate-600">ID: {tableId}</span>
+        <span className="text-[11px] font-mono text-teal-500 uppercase">Comm_Link</span>
+        <span className="text-[11px] font-mono text-slate-600">ID: {tableId}</span>
       </div>
       <button
         onClick={onDealTest}
-        className="mt-2 w-full py-1 bg-teal-600 text-[9px] font-black uppercase tracking-tighter hover:bg-teal-400 text-slate-950 transition-colors"
+        className="mt-2 w-full py-1 bg-teal-600 text-[11px] font-black uppercase tracking-tighter hover:bg-teal-400 text-slate-950 transition-colors"
       >
         State Broadcast Disabled
       </button>
       <div ref={messageListRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 custom-scrollbar">
         {messages.map((message, index) => {
           const rtcMessage = message.sender === 'RTC' ? parseRtcMessage(message.text) : null;
+          const senderClassName = getMessageClassName(message);
 
           return (
-            <div key={index} className={`text-[11px] font-mono ${getMessageClassName(message)}`}>
+            <div key={index} className={`text-[14px] font-mono ${senderClassName}`}>
               {rtcMessage ? (
                 <>
                   <span className="text-cyan-400 opacity-80">[{rtcMessage.peer}]</span>{rtcMessage.separator}{' '}
@@ -76,7 +97,7 @@ export default function DebugConsole({
                 <>{message.text}</>
               ) : (
                 <>
-                  <span className="opacity-50">[{message.sender}]:</span> {message.text}
+                  <span className={`${senderClassName} opacity-90`}>[{message.sender}]:</span> {message.text}
                 </>
               )}
             </div>
@@ -90,7 +111,7 @@ export default function DebugConsole({
           value={input}
           onChange={(event) => onInputChange?.(event.target.value)}
           placeholder="ENTER MESSAGE..."
-          className="w-full bg-transparent border-none text-[11px] font-mono text-teal-400 focus:outline-none placeholder-teal-900"
+          className="w-full bg-transparent border-none text-[14px] font-mono text-teal-400 focus:outline-none placeholder-teal-900"
         />
       </form>
     </div>

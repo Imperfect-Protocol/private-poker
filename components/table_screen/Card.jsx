@@ -1,5 +1,6 @@
 export function parseCards(cardString) {
   if (!cardString) return [];
+  if (Array.isArray(cardString)) return cardString;
 
   const cards = [];
   for (let i = 0; i < cardString.length; i += 2) {

@@ -221,6 +221,7 @@ export function useTable({
     prepareNetworkSession,
     publishMessage,
     retryInboundConnection: subscribeToPreviousSeat,
+    seats,
     subscribeTo,
   });
 }

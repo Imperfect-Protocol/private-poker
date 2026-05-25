@@ -78,7 +78,6 @@ function decodeCardSet(cards) {
 }
 
 function encodeWire(wire) {
-  const action = wire.action;
   const encoded = {
     table_id: wire.table_id,
     hand_id: wire.hand_id,
@@ -86,8 +85,17 @@ function encodeWire(wire) {
     sequence: wire.sequence,
     expected_state: wire.expected_state,
     log_lines: wire.log_lines,
-    action: { type: action.type, player: action.player },
   };
+
+  if (wire.nop) {
+    return {
+      ...encoded,
+      nop: wire.nop,
+    };
+  }
+
+  const action = wire.action;
+  encoded.action = { type: action.type, player: action.player };
 
   switch (action.type) {
     case 'SubmitShuffledDeck':
@@ -119,6 +127,18 @@ function encodeWire(wire) {
 }
 
 function decodeWire(encoded) {
+  if (encoded.nop) {
+    return new PokerActionEnvelopeWire({
+      table_id: encoded.table_id,
+      hand_id: encoded.hand_id,
+      from: encoded.from,
+      sequence: encoded.sequence,
+      expected_state: encoded.expected_state,
+      nop: encoded.nop,
+      log_lines: encoded.log_lines ?? [],
+    });
+  }
+
   const action = encoded.action ? { ...encoded.action } : null;
 
   if (action) {
@@ -231,10 +251,10 @@ function chipStackSizes(stacks) {
   return stacks.map(chipStackSize);
 }
 
-function tableViewPatch(clientState, signingKey, viewerSeatNo = null) {
+function tableViewPatch(clientState, viewerSeatNo = null) {
   const hand = clientState?.current_hand();
   if (!hand) return {};
-  return clientState.table.to_display_data(viewerSeatNo, signingKey).current_hand;
+  return clientState.table.to_display_data(viewerSeatNo).current_hand;
 }
 
 function streetName(round) {
@@ -286,7 +306,7 @@ function eventDisplayLine(event) {
     case 'bet':
       return `Player ${seat} Bet: $${event.amount}`;
     case 'fold':
-      return `Player ${seat} Fold`;
+      return `Player ${seat} Folded`;
     case 'hand_ended':
       return `Hand Ended; Player ${seat} submits public key first`;
     case 'hand_result':
@@ -306,8 +326,10 @@ function botTraceLines(game, action, result, fallbackLines = []) {
   if (!hand) return fallbackLines;
 
   if (action.type === 'SubmitBet') {
+    const didFold = result?.events?.some((event) => event.type === 'fold');
+    const verb = didFold ? 'Folded' : `Bet: $${action.amount}`;
     return [
-      `Player ${action.player + 1} (${playerOwnCardsConsoleString(action.player, hand, game.signingKey)}) Bet: $${action.amount}`,
+      `Player ${action.player + 1} (${playerOwnCardsConsoleString(action.player, hand, game.signingKey)}) ${verb}`,
     ];
   }
 
@@ -337,8 +359,9 @@ function gameStateName(pokerState) {
   return pokerState.type;
 }
 
-function currentGameStateFrom(game) {
+function currentGameStateFrom(game, viewerSeatNo = null) {
   const hand = game?.clientState.current_hand();
+  const viewerPlayerIndex = viewerSeatNo ?? game?.clientState.player_index ?? 0;
   if (!game || !hand) {
     return {
       state: 'Waiting',
@@ -397,15 +420,15 @@ function currentGameStateFrom(game) {
       ...showdownHand,
       isWinner: showdown.winner === index,
     }));
-    const playerWon = showdown.winner != null && showdown.winner === game.clientState.player_index;
+    const playerWon = showdown.winner != null && showdown.winner === viewerPlayerIndex;
     const stacks = chipStacks(hand, showdown.winner, showdown.winner == null ? 0 : payoutAmount);
 
     return {
       state: 'Showdown',
       seat,
       pot: showdown.winner == null ? payoutAmount : 0,
-      minBet: safeCallAmount(hand, game.clientState.player_index),
-      maxBet: safeChipsRemaining(hand, game.clientState.player_index),
+      minBet: safeCallAmount(hand, viewerPlayerIndex),
+      maxBet: safeChipsRemaining(hand, viewerPlayerIndex),
       step: hand.get_small_blind(),
       chipStacks: stacks,
       chipStackSizes: chipStackSizes(stacks),
@@ -430,8 +453,8 @@ function currentGameStateFrom(game) {
     state: gameStateName(pokerState),
     seat,
     pot: Number(hand.betting_state?.pot?.toString?.() ?? 0),
-    minBet: safeCallAmount(hand, game.clientState.player_index),
-    maxBet: safeChipsRemaining(hand, game.clientState.player_index),
+    minBet: safeCallAmount(hand, viewerPlayerIndex),
+    maxBet: safeChipsRemaining(hand, viewerPlayerIndex),
     step: hand.get_small_blind(),
     chipStacks: chipStacks(hand),
     chipStackSizes: chipStackSizes(chipStacks(hand)),
@@ -451,6 +474,11 @@ function protocolActionStateFrom(game) {
   };
 }
 
+function currentActingPlayer(game) {
+  const hand = game?.clientState.current_hand();
+  return hand?.get_current_state().get_current_player() ?? null;
+}
+
 function actionSnapshotFromState({
   currentGameState,
   protocolActionState,
@@ -466,7 +494,14 @@ function actionSnapshotFromState({
   const waitingForSmallBlind = stateName === 'SmallBlind' && isMyTurn;
   const waitingForBigBlind = stateName === 'BigBlind' && isMyTurn;
   const waitingForBlind = waitingForSmallBlind || waitingForBigBlind;
-  const blindAmount = Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND);
+  const blindAmount = waitingForSmallBlind
+    ? Number(viewPatch?.small_blind ?? SMALL_BLIND)
+    : waitingForBigBlind
+      ? Number(viewPatch?.big_blind ?? SMALL_BLIND * 2)
+      : Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND);
+  const actionMinBet = waitingForBlind
+    ? blindAmount
+    : Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND);
 
   return {
     ...previousSnapshot,
@@ -476,10 +511,10 @@ function actionSnapshotFromState({
     waitingForBlind,
     canAct: isMyTurn && !isFolded,
     stateLabel: viewPatch?.state_label ?? previousSnapshot.stateLabel,
-    minBet: Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND),
+    minBet: actionMinBet,
     maxBet: Number(currentGameState?.maxBet ?? viewPatch?.max_bet ?? INITIAL_CHIPS),
     step: Number(currentGameState?.step ?? viewPatch?.bet_step ?? SMALL_BLIND),
-    actionAmount: waitingForBlind ? blindAmount : Number(currentGameState?.minBet ?? viewPatch?.min_bet ?? SMALL_BLIND),
+    actionAmount: waitingForBlind ? blindAmount : actionMinBet,
     primaryLabel: waitingForSmallBlind
       ? 'Small Blind'
       : waitingForBigBlind
@@ -493,6 +528,10 @@ function actionSnapshotFromState({
     viewPatch,
   };
 }
+
+const formatSeatSender = (address, seatNo) => (
+  address ? address.slice(2, 4).toUpperCase() : `P${seatNo + 1}`
+);
 
 export function usePokerTable({
   table,
@@ -531,10 +570,31 @@ export function usePokerTable({
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
   const protocolActionInFlightRef = useRef(null);
+  const tableSeats = useMemo(() => table?.seats ?? [], [table?.seats]);
 
-  const appendGameLog = useCallback((line) => {
-    setGameMessages((prev) => [...prev, { text: line, sender: 'Game' }].slice(-160));
+  const senderForSeat = useCallback((seatNo) => {
+    const seat = tableSeats[seatNo];
+    return formatSeatSender(seat?.playerAddress, seatNo);
+  }, [tableSeats]);
+
+  const senderForLine = useCallback((line, fallbackSeatNo = null) => {
+    const playerLine = line.match(/^Player\s+(\d+)\b/);
+    if (playerLine) return senderForSeat(Number(playerLine[1]) - 1);
+
+    const actionLine = line.match(/\bon Player\s+(\d+)\b/);
+    if (actionLine) return senderForSeat(Number(actionLine[1]) - 1);
+
+    if (fallbackSeatNo != null) return senderForSeat(fallbackSeatNo);
+    return 'Game';
+  }, [senderForSeat]);
+
+  const appendGameLog = useCallback((line, sender = 'Game') => {
+    setGameMessages((prev) => [...prev, { text: line, sender }].slice(-160));
   }, []);
+
+  const appendTraceLines = useCallback((lines, fallbackSeatNo = null) => {
+    lines.forEach((line) => appendGameLog(line, senderForLine(line, fallbackSeatNo)));
+  }, [appendGameLog, senderForLine]);
 
   const tableId = table?.tableData?.id;
   const tableMaxSeats = table?.tableData?.maxSeats;
@@ -571,8 +631,8 @@ export function usePokerTable({
     if (!game || !hand) return null;
 
     const viewerSeatNo = currentSeatNo ?? null;
-    const patch = tableViewPatch(game.clientState, game.signingKey, viewerSeatNo);
-    const currentGameState = currentGameStateFrom(game);
+    const patch = tableViewPatch(game.clientState, viewerSeatNo);
+    const currentGameState = currentGameStateFrom(game, viewerSeatNo);
     const protocolActionState = protocolActionStateFrom(game);
     const nextCurrentGameState = !force && shallowEqual(
       lastSnapshotRef.current.currentGameState,
@@ -624,6 +684,20 @@ export function usePokerTable({
     setTimeout(() => publishMessage(message), randomSendJitter());
   }, [publishMessage]);
 
+  const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game)) => {
+    if (!game || currentPlayer == null) return null;
+    const wire = game.clientState.submit_nop({
+      current_player: currentPlayer,
+      reason: 'your turn not mine',
+    });
+    const displayLines = [`NOP: your turn not mine; current player is Player ${currentPlayer + 1}`];
+    wire.log_lines = displayLines;
+    publishWire(wire);
+    appendTraceLines(displayLines, game.clientState.player_index);
+    updateView();
+    return wire;
+  }, [appendTraceLines, publishWire, updateView]);
+
   const submitAction = useCallback((action, logLines) => {
     const game = gameRef.current;
     if (!game) return null;
@@ -632,10 +706,10 @@ export function usePokerTable({
     const displayLines = botTraceLines(game, action, envelope.result, logLines);
     const wire = envelope.to_wire(displayLines);
     publishWire(wire);
-    displayLines.forEach(appendGameLog);
+    appendTraceLines(displayLines, action.player);
     updateView();
     return wire;
-  }, [appendGameLog, publishWire, updateView]);
+  }, [appendTraceLines, publishWire, updateView]);
 
   const buildAutomaticAction = useCallback((game) => {
     const hand = game.clientState.current_hand();
@@ -717,7 +791,7 @@ export function usePokerTable({
     if (handState.current_state === POKER_HAND_STATE_FINISHED) {
       if (!game.seenFinished) {
         game.seenFinished = true;
-        final_lines(game.clientState.table).forEach(appendGameLog);
+        appendTraceLines(final_lines(game.clientState.table), game.clientState.player_index);
       }
       updateView();
       return null;
@@ -749,7 +823,7 @@ export function usePokerTable({
         protocolActionInFlightRef.current = null;
       }
     }
-  }, [appendGameLog, buildAutomaticAction, ensureKeys, submitAction, updateView]);
+  }, [appendTraceLines, buildAutomaticAction, ensureKeys, submitAction, updateView]);
 
   const handleNetworkMessage = useCallback(async (message) => {
     if (message?.type !== POKER_ACTION_MESSAGE && message?.type !== POKER_GAME_MESSAGE) return false;
@@ -758,13 +832,30 @@ export function usePokerTable({
     if (!game) return true;
 
     const wire = decodeWire(message.wire);
+    if (wire.nop) {
+      const applied = game.clientState.apply_nop_wire(wire);
+      if (applied) {
+        const displayLines = wire.log_lines?.length > 0
+          ? wire.log_lines
+          : [`NOP: ${wire.nop.reason}; current player is Player ${Number(wire.nop.current_player) + 1}`];
+        appendTraceLines(displayLines, wire.from);
+        updateView({ force: true });
+
+        const currentPlayer = currentActingPlayer(game);
+        if (currentPlayer != null && currentPlayer !== game.clientState.player_index) {
+          submitNop(game, currentPlayer);
+        }
+      }
+      return true;
+    }
+
     const envelope = wire.to_envelope();
     const { applied, result } = game.clientState.apply_envelope_result(envelope);
     if (applied) {
       const displayLines = wire.log_lines?.length > 0
         ? wire.log_lines
         : eventDisplayLines(result?.events);
-      displayLines.forEach(appendGameLog);
+      appendTraceLines(displayLines, envelope.from);
       const hand = game.clientState.current_hand();
       updateView({ force: true });
       if (hand?.get_current_state().is_finished()) {
@@ -772,12 +863,13 @@ export function usePokerTable({
         return true;
       }
 
-      if (hand?.get_current_state().get_current_player() !== game.clientState.player_index) {
-        setTimeout(() => publishMessage(message), randomSendJitter());
+      const currentPlayer = hand?.get_current_state().get_current_player() ?? null;
+      if (currentPlayer != null && currentPlayer !== game.clientState.player_index) {
+        submitNop(game, currentPlayer);
       }
     }
     return true;
-  }, [appendGameLog, publishMessage, resetGame, updateView]);
+  }, [appendTraceLines, publishMessage, resetGame, submitNop, updateView]);
 
   const submitBet = useCallback(async (amount) => {
     const game = await ensureKeys();
@@ -852,7 +944,7 @@ export function usePokerTable({
       disabled: !snapshot.showActionBar,
       sliderDisabled: snapshot.sliderDisabled || allInMode,
       hideCall: snapshot.hideCall || allInMode,
-      hideFold: snapshot.hideFold && !allInMode,
+      hideFold: snapshot.hideFold || allInMode || callAmount === 0,
       callAmount,
       primaryLabel: allInMode ? 'All In' : snapshot.primaryLabel,
       primaryAmount: snapshot.waitingForBlind || allInMode ? actionAmount : null,

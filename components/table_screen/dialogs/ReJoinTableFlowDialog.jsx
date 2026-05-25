@@ -17,6 +17,7 @@ export default function ReJoinTableFlowDialog({
   onReady,
 }) {
   const startedRef = useRef(false);
+  const readyRef = useRef(false);
   const [signatureStatus, setSignatureStatus] = useState('pending');
   const [error, setError] = useState('');
 
@@ -46,13 +47,19 @@ export default function ReJoinTableFlowDialog({
     && inboundStatus === 'complete'
     && outboundStatus === 'complete';
 
+  useEffect(() => {
+    if (!isComplete || readyRef.current) return;
+    readyRef.current = true;
+    onReady?.();
+  }, [isComplete, onReady]);
+
   return (
     <FlowStepDialog
       title="Joining P2P Network"
       description="We will restore your table session and connect the inbound and outbound poker channels. The table stays locked until peers are connected."
       error={error}
       isComplete={isComplete}
-      onOk={onReady}
+      showOk={false}
       steps={[
         { id: 'signature', label: 'Generate table BLS key', status: signatureStatus },
         {
@@ -63,7 +70,7 @@ export default function ReJoinTableFlowDialog({
             <button
               type="button"
               onClick={() => table.retryInboundConnection?.()}
-              className="rounded border border-red-400/50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-red-200 transition-colors hover:border-red-300 hover:bg-red-400/10"
+              className="cursor-pointer rounded border border-red-400/50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-red-200 transition-colors hover:border-red-300 hover:bg-red-400/10"
             >
               Retry
             </button>

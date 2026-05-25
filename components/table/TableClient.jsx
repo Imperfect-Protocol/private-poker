@@ -88,10 +88,6 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     const sender = formatSeatAddress(playerAddress);
     const messageLabels = rtcMessageLabels(incoming);
 
-    if (incoming?.type !== 'CHAT') {
-      messageLabels.forEach((text) => addDebugMessage({ text, sender }));
-    }
-
     if (incoming?.type === 'POKER_ACTION' || incoming?.type === 'POKER_GAME_MESSAGE') {
       pokerTableRef.current?.handleNetworkMessage(incoming);
       return;
@@ -99,7 +95,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
 
     if (incoming.type === 'CHAT') {
       messageLabels.forEach((text) => addDebugMessage({ text, sender }));
+      return;
     }
+
+    messageLabels.forEach((text) => addDebugMessage({ text, sender }));
   }, [addDebugMessage]);
 
   const handleSeatEvent = useCallback((seatNo, seatEvent) => {
