@@ -49,6 +49,7 @@ export function useNetwork({
   onOperatorTopUp,
   isTableFull = false,
   tableCapacity = 0,
+  localMediaStream = null,
 } = {}) {
   const { accountSession } = useAccountSession();
   const playerAddress = accountSession?.walletAddress;
@@ -118,8 +119,10 @@ export function useNetwork({
       isTableFull,
       tableCapacity,
     });
+    session.setLocalMediaStream(localMediaStream);
   }, [
     isTableFull,
+    localMediaStream,
     lobbyId,
     onActivity,
     playerAddress,
@@ -185,11 +188,13 @@ export function useNetwork({
       isTableFull,
       tableCapacity,
     });
+    session.setLocalMediaStream(localMediaStream);
     await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback, options);
   }, [
     blsKeys,
     generateKeys,
     isTableFull,
+    localMediaStream,
     lobbyId,
     mySeatAnnouncePublicKey,
     playerAddress,
@@ -214,11 +219,13 @@ export function useNetwork({
       isTableFull,
       tableCapacity,
     });
+    session.setLocalMediaStream(localMediaStream);
     return keys;
   }, [
     blsKeys,
     generateKeys,
     isTableFull,
+    localMediaStream,
     lobbyId,
     playerAddress,
     players,

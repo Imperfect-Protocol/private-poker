@@ -10,6 +10,7 @@ import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTable
 import TerminalResultDialog from '@/components/table_screen/dialogs/TerminalResultDialog';
 import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
 import { useAccounts } from '@/hooks/useAccounts';
+import { useWebcam } from '@/hooks/useWebcam';
 import { submitConsoleLine } from '@/lib/crum_pkr';
 
 const readCreatedTableSnapshot = (tableId) => {
@@ -80,6 +81,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [reJoinDismissed, setReJoinDismissed] = useState(false);
   const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [topUpRequest, setTopUpRequest] = useState(null);
+  const webcam = useWebcam();
 
   const addDebugMessage = useCallback((message) => {
     setMessages((prev) => [...prev, message].slice(-160));
@@ -142,6 +144,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     onSeat: handleSeatEvent,
     networkEnabled,
     onOperatorTopUp: handleOperatorTopUp,
+    localMediaStream: webcam.stream,
   });
 
   const [pokerTableState, pokerTableActions] = usePokerTable({
@@ -209,6 +212,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         : `${cheaterName.toUpperCase()} CHEATED ${kind}`,
     };
   }, [getPlayerDisplayname, pokerTableState.terminalResult, table.tableData?.players]);
+  const webcamView = useMemo(() => ({
+    ...webcam,
+    remoteStreams: table.networkSnapshot?.remoteMediaStreams ?? {},
+  }), [table.networkSnapshot?.remoteMediaStreams, webcam]);
 
   useEffect(() => {
     if (!protocolActionState) return;
@@ -351,6 +358,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         : null}
       actionBarProps={pokerTableState.actionBarProps}
       gameState={currentGameState}
+      webcam={webcamView}
       onNextHandCountdownComplete={
         currentGameState?.cheat
           ? pokerTableActions.completeCheatCountdown

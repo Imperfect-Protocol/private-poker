@@ -48,6 +48,7 @@ export function useTable({
   onSeat: onSeatEvent,
   networkEnabled = false,
   onOperatorTopUp,
+  localMediaStream = null,
 } = {}) {
   const { accountSession } = useAccountSession();
   const playerAddress = accountSession?.walletAddress;
@@ -90,6 +91,7 @@ export function useTable({
     onOperatorTopUp,
     isTableFull,
     tableCapacity,
+    localMediaStream,
   });
   const [
     publishMessage,

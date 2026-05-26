@@ -56,6 +56,10 @@ export default function TablePlayers({
   playerNetworkStates = {},
   gameState = null,
   getPlayerDisplayname = null,
+  webcamStream = null,
+  remoteWebcamStreams = {},
+  isWebcamStarting = false,
+  onToggleWebcam = null,
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
@@ -87,6 +91,9 @@ export default function TablePlayers({
     const displayName = isEmptySeat
       ? ''
       : getPlayerDisplayname?.(player.playerAddress) ?? player.displayName;
+    const remoteWebcamStream = isEmptySeat
+      ? null
+      : remoteWebcamStreams[player.playerAddress?.toLowerCase?.()] ?? null;
 
     return (
       <Player
@@ -102,6 +109,9 @@ export default function TablePlayers({
         isWinner={isWinner}
         chipStack={chipStack}
         chipStackSize={chipStackSize}
+        webcamStream={isMe ? webcamStream : remoteWebcamStream}
+        isWebcamStarting={isMe && isWebcamStarting}
+        onToggleWebcam={isMe ? onToggleWebcam : null}
       />
     );
   });

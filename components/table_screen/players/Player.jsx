@@ -14,6 +14,9 @@ export default function TablePlayer({
   handRank = null,
   isWinner = false,
   chipStack = null,
+  webcamStream = null,
+  isWebcamStarting = false,
+  onToggleWebcam = null,
 }) {
   const cardSize = isMe ? 'lg' : 'md';
 
@@ -43,10 +46,13 @@ export default function TablePlayer({
           isEmptySeat={isEmptySeat}
           isTheirTurn={isTheirTurn || isWinner}
           isWinner={isWinner}
+          webcamStream={webcamStream}
+          isWebcamStarting={isMe && isWebcamStarting}
+          onToggleWebcam={isMe ? onToggleWebcam : null}
         />
 
         <div className={`mt-3 bg-slate-900/95 border px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10 ${isEmptySeat ? 'border-slate-700/60' : 'border-teal-500/30'}`}>
-          <Name player={player} isEmptySeat={isEmptySeat} />
+          <Name player={player} isEmptySeat={isEmptySeat} isMe={isMe} />
           {handRank && (
             <div className={`mt-1 text-[9px] font-black uppercase tracking-widest ${isWinner ? 'text-emerald-200' : 'text-slate-300'}`}>
               {isWinner ? 'Winner' : 'Showdown'}: {handRank}

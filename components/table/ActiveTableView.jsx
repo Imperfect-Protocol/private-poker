@@ -10,6 +10,7 @@ export default function ActiveTableView({
   actionBarProps = {},
   gameState = null,
   onNextHandCountdownComplete,
+  webcam = null,
   children,
 }) {
   const currentSeat = table.currentSeat ?? {};
@@ -30,6 +31,7 @@ export default function ActiveTableView({
       onNextHandCountdownComplete={onNextHandCountdownComplete}
       currentSeatNo={currentSeat.seatNo}
       getPlayerDisplayname={getPlayerDisplayname}
+      webcam={webcam}
     >
       {children}
     </TableScreen>

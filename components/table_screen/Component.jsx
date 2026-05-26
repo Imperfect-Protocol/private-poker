@@ -64,6 +64,7 @@ export default function TableScreen({
   debugConsole = null,
   onNextHandCountdownComplete,
   getPlayerDisplayname = null,
+  webcam = null,
   children,
 }) {
   const hasDimOverlay = Children.toArray(children).length > 0;
@@ -167,6 +168,10 @@ export default function TableScreen({
             playerNetworkStates={playerNetworkStates}
             gameState={gameState}
             getPlayerDisplayname={getPlayerDisplayname}
+            webcamStream={webcam?.stream ?? null}
+            remoteWebcamStreams={webcam?.remoteStreams ?? {}}
+            isWebcamStarting={Boolean(webcam?.isStarting)}
+            onToggleWebcam={webcam?.toggle ?? null}
           />
 
           {gameState?.payout && (
