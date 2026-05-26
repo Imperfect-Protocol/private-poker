@@ -13,18 +13,20 @@ export function Card({ suit, rank, isHidden, size = "sm" }) {
   const sizeClasses = {
     lg: "w-12 h-16 md:w-16 md:h-24 text-lg md:text-xl",
     md: "w-10 h-14 md:w-12 md:h-[4.5rem] text-sm md:text-base",
+    community: "w-10 h-14 md:w-11 md:h-16 text-sm md:text-base",
     sm: "w-8 h-12 text-xs",
   }[size] ?? "w-8 h-12 text-xs";
   const iconSize = {
     lg: "text-2xl md:text-3xl",
     md: "text-xl md:text-2xl",
+    community: "text-xl md:text-2xl",
     sm: "text-lg",
   }[size] ?? "text-lg";
 
   if (isHidden) {
     return (
-      <div className={`${sizeClasses} bg-slate-800 border-2 border-slate-600 rounded shadow-lg flex items-center justify-center transform transition-transform hover:-translate-y-1`}>
-        <div className="w-full h-full border border-slate-700/50 m-0.5 rounded-sm bg-[radial-gradient(circle,_#334155_1px,_transparent_1px)] bg-[size:4px_4px]" />
+      <div className={`${sizeClasses} bg-white border-2 border-slate-200 rounded shadow-lg flex items-center justify-center transform transition-transform hover:-translate-y-1`}>
+        <div className="m-0.5 h-full w-full rounded-sm border border-slate-300/80 bg-[linear-gradient(45deg,rgba(185,28,28,0.9)_25%,transparent_25%,transparent_75%,rgba(15,23,42,0.9)_75%),linear-gradient(45deg,rgba(15,23,42,0.9)_25%,transparent_25%,transparent_75%,rgba(185,28,28,0.9)_75%)] bg-[position:0_0,4px_4px] bg-[size:8px_8px]" />
       </div>
     );
   }

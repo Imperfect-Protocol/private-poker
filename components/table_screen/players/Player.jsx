@@ -57,7 +57,7 @@ export default function TablePlayer({
           onToggleAudio={isMe ? onToggleAudio : null}
         />
 
-        <div className={`mt-3 bg-slate-900/95 border px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10 ${isEmptySeat ? 'border-slate-700/60' : 'border-teal-500/30'}`}>
+        <div className={`mt-3 bg-[#080d16]/95 border px-4 py-1.5 rounded-lg min-w-[110px] backdrop-blur-sm text-center z-10 shadow-[0_10px_24px_rgba(0,0,0,0.3),inset_0_0_14px_rgba(96,116,145,0.14)] ${isEmptySeat ? 'border-[#303948]/70' : 'border-[#435064]/85'}`}>
           <Name player={player} isEmptySeat={isEmptySeat} isMe={isMe} />
           {handRank && (
             <div className={`mt-1 text-[9px] font-black uppercase tracking-widest ${isWinner ? 'text-emerald-200' : 'text-slate-300'}`}>

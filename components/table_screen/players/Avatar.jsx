@@ -19,12 +19,14 @@ export default function Avatar({
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const borderClass = isEmptySeat
-    ? 'border-dashed border-slate-600 shadow-none'
+    ? 'border-dashed border-[#303948]/70 shadow-none'
     : isWinner
       ? 'border-emerald-300 shadow-[0_0_26px_rgba(110,231,183,0.75)] animate-pulse'
-      : isMe
-        ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.5)]'
-        : 'border-teal-500 shadow-[0_0_15px_rgba(20,184,166,0.5)]';
+      : isTheirTurn
+        ? 'border-amber-300 shadow-[0_0_30px_rgba(245,158,11,0.68),0_0_12px_rgba(251,191,36,0.45),inset_0_0_18px_rgba(245,158,11,0.18)]'
+        : isMe
+          ? 'border-[#5d6c84] shadow-[0_0_22px_rgba(96,116,145,0.42),inset_0_0_18px_rgba(68,82,104,0.22)]'
+          : 'border-[#435064]/90 shadow-[0_0_16px_rgba(59,74,96,0.36),inset_0_0_14px_rgba(96,116,145,0.16)]';
 
   const displayName = player.displayName?.startsWith?.('0x') ? '' : player.displayName;
   const nameParts = displayName?.split(/\s+/).filter(Boolean) ?? [];
@@ -66,12 +68,12 @@ export default function Avatar({
     <div className="relative z-10">
       <button
         type="button"
-        className={`${sizeClass} rounded-full bg-slate-950 border-2 ${borderClass} flex items-center justify-center relative overflow-hidden group-hover:scale-110 transition-transform ${canToggleWebcam ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`${sizeClass} rounded-full bg-[#080d16] border-2 ${borderClass} flex items-center justify-center relative overflow-hidden group-hover:scale-110 transition-transform ${canToggleWebcam ? 'cursor-pointer' : 'cursor-default'}`}
         onClick={canToggleWebcam ? onToggleWebcam : undefined}
         disabled={!canToggleWebcam}
         title={canToggleWebcam ? 'Toggle webcam' : undefined}
       >
-        <div className={`absolute inset-0 bg-gradient-to-tr ${isEmptySeat ? 'from-slate-800/50 to-transparent' : 'from-teal-900/50 to-transparent'}`} />
+        <div className={`absolute inset-0 bg-gradient-to-tr ${isEmptySeat ? 'from-[#172033]/55 to-transparent' : 'from-[#172235]/54 to-transparent'}`} />
         {hasVideo ? (
           <video
             ref={videoRef}
@@ -87,7 +89,7 @@ export default function Avatar({
         )}
 
         {isTheirTurn && !isWinner && (
-          <div className="absolute bottom-0 w-full h-1.5 bg-cyan-400 animate-pulse" />
+          <div className="absolute bottom-0 w-full h-1.5 bg-orange-300 shadow-[0_0_16px_rgba(251,191,36,0.95),0_0_8px_rgba(255,237,213,0.7)] animate-pulse" />
         )}
         {isWinner && (
           <div className="absolute bottom-0 w-full h-1.5 bg-emerald-300 animate-pulse" />

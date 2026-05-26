@@ -1,6 +1,6 @@
 export default function Background() {
   return (
-    <div className="absolute inset-0 rounded-[100px] border-4 border-teal-500/10 shadow-[0_0_60px_rgba(20,184,166,0.15)] overflow-hidden">
+    <div className="absolute inset-0 rounded-[100px] border-4 border-sky-100/28 shadow-[0_0_29px_rgba(186,230,253,0.3),0_0_68px_rgba(56,189,248,0.18),inset_0_0_24px_rgba(224,242,254,0.14)] overflow-hidden">
       <img
         src="/table.jpg"
         alt="Poker Table"

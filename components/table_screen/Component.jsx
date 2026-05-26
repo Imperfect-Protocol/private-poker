@@ -146,8 +146,8 @@ export default function TableScreen({
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
             <div className="grid grid-cols-[10rem_22rem] items-center gap-4">
               <div className="text-center group pointer-events-auto">
-              <div className="bg-slate-900/90 border-2 border-teal-500/40 px-8 py-3 rounded-2xl backdrop-blur-xl shadow-[0_0_30px_rgba(20,184,166,0.2)]">
-                <p className="text-[10px] text-teal-400 font-mono tracking-widest uppercase mb-1">Current Pot</p>
+              <div className="bg-[#080d16]/95 border-2 border-[#435064]/85 px-8 py-3 rounded-2xl backdrop-blur-xl shadow-[0_10px_24px_rgba(0,0,0,0.3),inset_0_0_18px_rgba(96,116,145,0.14)]">
+                <p className="text-[10px] text-[#94a3b8] font-mono tracking-widest uppercase mb-1">Current Pot</p>
                 <div className="flex items-center justify-center gap-2 text-white">
                   <Coins size={28} className="text-yellow-200 drop-shadow-[0_0_10px_rgba(250,204,21,0.35)]" />
                   <p className="text-3xl font-black font-mono tracking-tighter italic">
