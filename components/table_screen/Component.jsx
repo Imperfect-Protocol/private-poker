@@ -99,6 +99,9 @@ export default function TableScreen({
   const winnerLabel = winnerAddress
     ? getPlayerDisplayname?.(winnerAddress) || winnerAddress.slice(2, 4).toUpperCase()
     : null;
+  const resultTitleText = !isCheatResult && gameState?.resultText !== 'You Win'
+    ? `${winnerLabel ?? 'Winner'} Wins`
+    : gameState?.resultText;
   const resultRankText = gameState?.resultRank
     ? gameState.resultText === 'You Win'
       ? gameState.resultRank
@@ -114,7 +117,9 @@ export default function TableScreen({
       : null;
   const resultColorClass = isCheatResult
     ? gameState.cheat.isViewerCheater ? 'text-red-300' : 'text-purple-300'
-    : gameState?.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300';
+    : gameState?.resultText === 'You Win'
+      ? 'text-yellow-200 drop-shadow-[0_0_28px_rgba(250,204,21,0.95)]'
+      : 'text-orange-500 drop-shadow-[0_0_28px_rgba(249,115,22,0.9)]';
   const payoutStyle = payoutPositionStyle(tableData, currentPlayerAddress, gameState?.payout?.winner);
 
   return (
@@ -132,8 +137,8 @@ export default function TableScreen({
 
           {showResult && (
             <div className="absolute left-1/2 top-[-36%] z-30 -translate-x-1/2 pointer-events-none">
-              <div className={`text-center text-4xl md:text-6xl font-black uppercase tracking-widest italic drop-shadow-[0_0_28px_rgba(255,255,255,0.3)] ${resultColorClass}`}>
-                {gameState.resultText}
+              <div className={`text-center text-4xl md:text-6xl font-black uppercase tracking-widest italic ${isCheatResult ? 'drop-shadow-[0_0_28px_rgba(255,255,255,0.3)]' : ''} ${resultColorClass}`}>
+                {resultTitleText}
               </div>
               {resultRankText && (
                 <div className={`mt-2 text-center text-sm md:text-base font-black uppercase tracking-[0.25em] drop-shadow-[0_0_18px_rgba(20,184,166,0.35)] ${isCheatResult ? resultColorClass : 'text-white'}`}>
