@@ -871,6 +871,7 @@ export function usePokerTable({
   networkSnapshot,
   publishMessage,
   prepareNetworkSession,
+  prepareHandSession,
 } = {}) {
   const [snapshot, setSnapshot] = useState({
     started: false,
@@ -971,6 +972,8 @@ export function usePokerTable({
       clientState,
       signingKey: null,
       publicKey: null,
+      handKeyHandId: null,
+      handKeys: new Map(),
       shuffleTrace: null,
       seenFinished: false,
     };
@@ -1022,22 +1025,37 @@ export function usePokerTable({
     return nextSnapshot;
   }, [currentSeatNo]);
 
-  const ensureKeys = useCallback(async () => {
+  const ensureKeys = useCallback(async (handNumber = null) => {
     const game = gameRef.current ?? resetGame();
     if (!game) return null;
-    if (game.signingKey && game.publicKey) return game;
-    if (currentSeatNo == null || !prepareNetworkSession) return null;
+    const targetHandNumber = Number(handNumber ?? game.clientState.hand_id ?? HAND_ID);
+    if (
+      game.signingKey
+      && game.publicKey
+      && Number(game.handKeyHandId) === targetHandNumber
+    ) return game;
+    if (currentSeatNo == null || (!prepareHandSession && !prepareNetworkSession)) return null;
 
-    const keys = await prepareNetworkSession();
+    const cachedKeys = game.handKeys?.get(targetHandNumber);
+    const keys = cachedKeys
+      ?? (prepareHandSession
+        ? await prepareHandSession(targetHandNumber)
+        : await prepareNetworkSession());
+    if (!cachedKeys) {
+      const handKeys = game.handKeys ?? new Map();
+      handKeys.set(targetHandNumber, keys);
+      game.handKeys = handKeys;
+    }
     const signingKey = make_signing_key_from_seed(hexToBytes(keys.privateKey));
     const nextGame = {
       ...game,
       signingKey,
       publicKey: make_public_key_from_signing_key(signingKey),
+      handKeyHandId: targetHandNumber,
     };
     gameRef.current = nextGame;
     return nextGame;
-  }, [currentSeatNo, prepareNetworkSession, resetGame]);
+  }, [currentSeatNo, prepareHandSession, prepareNetworkSession, resetGame]);
 
   const signWireHistoryEntry = useCallback((wire, game = gameRef.current) => {
     if (wire?.nop || !wire?.sequence_number || !game?.signingKey || !game?.publicKey) return null;
@@ -1114,6 +1132,7 @@ export function usePokerTable({
       type: HISTORY_MESSAGE,
       table_id: wire.table_id,
       hand_id: wire.hand_id,
+      hand_number: wire.hand_id,
       timestamp: Date.now(),
       sync,
       sequence_number: latestHandHistorySequence,
@@ -1380,6 +1399,9 @@ export function usePokerTable({
     game.clientState.hand_id += 1;
     game.clientState.sequence = 0;
     game.clientState.seen.clear();
+    game.signingKey = null;
+    game.publicKey = null;
+    game.handKeyHandId = null;
     game.shuffleTrace = null;
     game.seenFinished = false;
     handHistoryRef.current = [];
@@ -1419,6 +1441,7 @@ export function usePokerTable({
         if (!startNextHand()) return true;
       }
       if (wire.hand_id !== game.clientState.hand_id) continue;
+      await ensureKeys(wire.hand_id);
 
       if (wire.nop) {
         if (game.clientState.apply_nop_wire(wire)) {
@@ -1478,6 +1501,7 @@ export function usePokerTable({
     appendTraceLines,
     rememberWire,
     resetGame,
+    ensureKeys,
     senderForAddress,
     startNextHand,
     updateView,
@@ -1544,6 +1568,8 @@ export function usePokerTable({
 
     const game = gameRef.current ?? resetGame();
     if (!game) return true;
+    const messageHandNumber = Number(message.hand_number ?? message.hand_id ?? game.clientState.hand_id);
+    await ensureKeys(messageHandNumber);
 
     const handHistory = Array.isArray(message.hand_history)
       ? message.hand_history
@@ -1557,6 +1583,7 @@ export function usePokerTable({
     while (wire.hand_id > game.clientState.hand_id) {
       if (!startNextHand()) return true;
     }
+    await ensureKeys(wire.hand_id);
 
     if (wire.nop) {
       game.clientState.apply_nop_wire(wire);
@@ -1611,6 +1638,7 @@ export function usePokerTable({
     appendTraceLines,
     applyHistoryEntries,
     continueAfterPokerMessage,
+    ensureKeys,
     resetGame,
     senderForAddress,
     startNextHand,

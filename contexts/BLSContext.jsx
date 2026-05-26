@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { deriveTableSessionKeys } from '@/lib/accountSession';
+import { deriveHandSessionKeys, deriveTableSessionKeys } from '@/lib/accountSession';
 import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
@@ -73,9 +73,20 @@ export function BLSProvider({ children }) {
             setIsGenerating(false);
         }
     }, [requireSession, tableKeys]);
+
+    const generateHandKeys = useCallback(async (tableDetails, handNumber) => {
+        const session = await requireSession();
+        return deriveHandSessionKeys(session, tableDetails, handNumber);
+    }, [requireSession]);
     
     return (
-        <BLSContext.Provider value={{ getKeys, isGenerating, generateKeys, isConnected: Boolean(accountSession) }}>
+        <BLSContext.Provider value={{
+            getKeys,
+            isGenerating,
+            generateKeys,
+            generateHandKeys,
+            isConnected: Boolean(accountSession),
+        }}>
             {children}
         </BLSContext.Provider>
     );

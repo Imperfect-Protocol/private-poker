@@ -101,6 +101,7 @@ export function useTable({
     armBadSignatureOnce,
     armDropNextMessage,
     armDuplicateNextMessage,
+    prepareHandSession,
   ] = network;
   const [getPreviousSeat, getNextSeat] = useNetworkTopology(seats.length);
 
@@ -231,8 +232,10 @@ export function useTable({
     hasJoinedTable: isSeated === true,
     network,
     networkSnapshot,
+    lobbyId,
     playerNetworkStates: networkSnapshot?.peerStates ?? {},
     prepareNetworkSession,
+    prepareHandSession,
     publishMessage,
     armBadSignatureOnce,
     armDropNextMessage,

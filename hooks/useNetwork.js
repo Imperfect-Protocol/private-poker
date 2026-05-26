@@ -65,7 +65,7 @@ export function useNetwork({
   const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
   const rtcSessionPool = useRtcSessionPool();
   const controlActions = useActionQueue('network-control');
-  const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
+  const { blsKeys, generateKeys, generateHandKeys } = useRequireBLS(tableDetails);
   const blsKeysRef = useRef(null);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
@@ -275,6 +275,10 @@ export function useNetwork({
     prepareNetworkSessionNow,
   ]);
 
+  const prepareHandSession = useCallback(async (handNumber) => {
+    return generateHandKeys(handNumber, tableDetails);
+  }, [generateHandKeys, tableDetails]);
+
   return [
     publishMessage,
     subscribeTo,
@@ -283,5 +287,6 @@ export function useNetwork({
     armBadSignatureOnce,
     armDropNextMessage,
     armDuplicateNextMessage,
+    prepareHandSession,
   ];
 }
