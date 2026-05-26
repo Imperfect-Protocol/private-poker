@@ -349,6 +349,24 @@ function makePokerTable(numPlayers) {
   return table;
 }
 
+function makePokerTableForHand(numPlayers, handSetup) {
+  const table = PokerTable.new(numPlayers, POKER_HOLDEM_ROUNDS);
+  for (let player = 1; player <= numPlayers; player += 1) {
+    table.join(player);
+  }
+  const handNumber = Math.max(1, Number(handSetup?.hand_number ?? handSetup?.hand_id ?? HAND_ID));
+  const initialChips = Array.isArray(handSetup?.initial_chips) && handSetup.initial_chips.length === numPlayers
+    ? handSetup.initial_chips.map((chips) => Number(chips))
+    : Array(numPlayers).fill(INITIAL_CHIPS);
+  const smallBlind = Number(handSetup?.small_blind ?? SMALL_BLIND);
+  const dealerButton = Number(handSetup?.dealer_button ?? 0);
+  table.hand_number = handNumber - 1;
+  table.start_hand(initialChips, smallBlind, dealerButton);
+  table.hand_number = handNumber;
+  table.clear_events?.();
+  return table;
+}
+
 function cardsToStrings(cards) {
   return cards
     .filter(Boolean)
@@ -974,6 +992,13 @@ export function usePokerTable({
       publicKey: null,
       handKeyHandId: null,
       handKeys: new Map(),
+      currentHandSetup: {
+        hand_id: HAND_ID,
+        hand_number: HAND_ID,
+        initial_chips: Array(numPlayers).fill(INITIAL_CHIPS),
+        small_blind: SMALL_BLIND,
+        dealer_button: 0,
+      },
       shuffleTrace: null,
       seenFinished: false,
     };
@@ -1133,6 +1158,7 @@ export function usePokerTable({
       table_id: wire.table_id,
       hand_id: wire.hand_id,
       hand_number: wire.hand_id,
+      hand_setup: game?.currentHandSetup ?? null,
       timestamp: Date.now(),
       sync,
       sequence_number: latestHandHistorySequence,
@@ -1399,6 +1425,13 @@ export function usePokerTable({
     game.clientState.hand_id += 1;
     game.clientState.sequence = 0;
     game.clientState.seen.clear();
+    game.currentHandSetup = {
+      hand_id: game.clientState.hand_id,
+      hand_number: game.clientState.hand_id,
+      initial_chips: initialChips.map((chips) => Number(chips)),
+      small_blind: smallBlind,
+      dealer_button: dealerSeatNumber,
+    };
     game.signingKey = null;
     game.publicKey = null;
     game.handKeyHandId = null;
@@ -1414,7 +1447,46 @@ export function usePokerTable({
     return true;
   }, [appendTraceLines, updateView]);
 
-  const applyHistoryEntries = useCallback(async (historyEntries = [], playerAddress = null) => {
+  const bootstrapHandFromSetup = useCallback(async (game, handSetup) => {
+    const targetHandId = Number(handSetup?.hand_number ?? handSetup?.hand_id ?? 0);
+    const numPlayers = Number(tableMaxSeats || 0);
+    if (!game || !targetHandId || !numPlayers) return false;
+    if (targetHandId <= Number(game.clientState.hand_id ?? 0)) return true;
+
+    const pokerTable = makePokerTableForHand(numPlayers, handSetup);
+    game.clientState.table = pokerTable;
+    game.clientState.hand_id = targetHandId;
+    game.clientState.sequence = 0;
+    game.clientState.seen.clear();
+    game.signingKey = null;
+    game.publicKey = null;
+    game.handKeyHandId = null;
+    game.shuffleTrace = null;
+    game.seenFinished = false;
+    game.currentHandSetup = {
+      hand_id: targetHandId,
+      hand_number: targetHandId,
+      initial_chips: [...(handSetup.initial_chips ?? [])].map((chips) => Number(chips)),
+      small_blind: Number(handSetup.small_blind ?? SMALL_BLIND),
+      dealer_button: Number(handSetup.dealer_button ?? 0),
+    };
+    handHistoryRef.current = [];
+    seenHistoryTipsRef.current = new Set();
+    protocolActionInFlightRef.current = null;
+    await ensureKeys(targetHandId);
+    updateView({ force: true });
+    return true;
+  }, [ensureKeys, tableMaxSeats, updateView]);
+
+  const advanceToHistoryHand = useCallback(async (game, targetHandId, handSetup) => {
+    while (targetHandId > game.clientState.hand_id) {
+      if (startNextHand()) continue;
+      return bootstrapHandFromSetup(game, handSetup);
+    }
+    return true;
+  }, [bootstrapHandFromSetup, startNextHand]);
+
+  const applyHistoryEntries = useCallback(async (historyEntries = [], playerAddress = null, handSetup = null) => {
     const game = gameRef.current ?? resetGame();
     if (!game || !Array.isArray(historyEntries)) return true;
 
@@ -1437,9 +1509,7 @@ export function usePokerTable({
         continue;
       }
 
-      while (wire.hand_id > game.clientState.hand_id) {
-        if (!startNextHand()) return true;
-      }
+      if (!await advanceToHistoryHand(game, Number(wire.hand_id), handSetup)) return true;
       if (wire.hand_id !== game.clientState.hand_id) continue;
       await ensureKeys(wire.hand_id);
 
@@ -1502,8 +1572,8 @@ export function usePokerTable({
     rememberWire,
     resetGame,
     ensureKeys,
+    advanceToHistoryHand,
     senderForAddress,
-    startNextHand,
     updateView,
     verifyHistoryEntrySignature,
   ]);
@@ -1575,14 +1645,12 @@ export function usePokerTable({
       ? message.hand_history
       : [];
     if (handHistory.length > 0) {
-      const appliedHistory = await applyHistoryEntries(handHistory, playerAddress);
+      const appliedHistory = await applyHistoryEntries(handHistory, playerAddress, message.hand_setup);
       if (!appliedHistory) return true;
     }
 
     const wire = decodeWire(message.wire);
-    while (wire.hand_id > game.clientState.hand_id) {
-      if (!startNextHand()) return true;
-    }
+    if (!await advanceToHistoryHand(game, Number(wire.hand_id), message.hand_setup)) return true;
     await ensureKeys(wire.hand_id);
 
     if (wire.nop) {
@@ -1636,12 +1704,12 @@ export function usePokerTable({
   }, [
     appendGameLog,
     appendTraceLines,
+    advanceToHistoryHand,
     applyHistoryEntries,
     continueAfterPokerMessage,
     ensureKeys,
     resetGame,
     senderForAddress,
-    startNextHand,
     updateView,
   ]);
 
