@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
+import { useActionQueue } from '@/hooks/useActionQueue';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
 import { useRtcSessionPool } from '@/hooks/useRtcSessionPool';
@@ -41,6 +42,13 @@ function makeSessionConfigKey({
   ].join('::');
 }
 
+const makeBlsActionKey = ({ playerAddress, lobbyId, tableId }) => [
+  'bls-key-generation',
+  normalizeAddress(playerAddress),
+  lobbyId ?? '',
+  tableId ?? '',
+].join(':');
+
 export function useNetwork({
   tableId,
   lobbyId,
@@ -56,12 +64,19 @@ export function useNetwork({
   const playerAddress = accountSession?.walletAddress;
   const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
   const rtcSessionPool = useRtcSessionPool();
+  const controlActions = useActionQueue('network-control');
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
+  const blsKeysRef = useRef(null);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
   const operatorPrivateKey = blsKeys?.operatorPrivateKey;
   const operator = blsKeys?.operator;
   const loggedUpdateKeysRef = useRef(new Set());
+  const blsActionKey = useMemo(() => makeBlsActionKey({
+    playerAddress,
+    lobbyId,
+    tableId,
+  }), [lobbyId, playerAddress, tableId]);
   const players = useMemo(
     () => seats
       .filter((seat) => seat?.playerAddress)
@@ -77,6 +92,12 @@ export function useNetwork({
   const mySeatAnnouncePublicKey = players.find(
     (player) => normalizeAddress(player.playerAddress) === normalizeAddress(playerAddress),
   )?.annoncePublicKey;
+
+  useEffect(() => {
+    if (blsKeys) {
+      blsKeysRef.current = blsKeys;
+    }
+  }, [blsKeys]);
   const [session] = useState(
     () => new PokerRtcSession({
       sendSignal: () => {},
@@ -86,6 +107,62 @@ export function useNetwork({
     }),
   );
   const [networkSnapshot, setNetworkSnapshot] = useState(() => session.getSnapshot());
+  const sendPooledSignal = useCallback(async (payload) => {
+    console.log('[RTC route] table asks lobby for silent route', {
+      from: payload.originAddress,
+      to: payload.targetAddress,
+      lobbyId: payload.lobbyId,
+      tableId: payload.tableId,
+    });
+    const route = await rtcSessionPool.requestLobbyRoute(payload);
+    console.log(`[RTC route] lobby route ${route.found ? 'found' : 'not found'}`, route);
+    return route;
+  }, [rtcSessionPool]);
+
+  const prepareNetworkSessionNow = useCallback(async () => {
+    const keys = blsKeysRef.current ?? blsKeys ?? await generateKeys(tableDetails);
+    blsKeysRef.current = keys;
+    const generatedPublicKey = `0x${keys.publicKey}`;
+    if (
+      mySeatAnnouncePublicKey
+      && normalizeAddress(generatedPublicKey) !== normalizeAddress(mySeatAnnouncePublicKey)
+    ) {
+      throw new Error(
+        'Generated BLS key does not match the announce public key stored on-chain for this table. Rejoin this table so the table stores the current deterministic announce key.',
+      );
+    }
+    session.update({
+      playerAddress,
+      operator: keys.operator,
+      tableId,
+      lobbyId,
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      operatorPrivateKey: keys.operatorPrivateKey,
+      players,
+      isTableFull,
+      tableCapacity,
+    });
+    session.setLocalMediaStream(localMediaStream);
+    return keys;
+  }, [
+    blsKeys,
+    generateKeys,
+    isTableFull,
+    localMediaStream,
+    lobbyId,
+    mySeatAnnouncePublicKey,
+    playerAddress,
+    players,
+    session,
+    tableCapacity,
+    tableDetails,
+    tableId,
+  ]);
+
+  useEffect(() => {
+    controlActions.registerAction(blsActionKey, prepareNetworkSessionNow);
+  }, [blsActionKey, controlActions, prepareNetworkSessionNow]);
 
   useEffect(() => {
     const sessionConfigKey = makeSessionConfigKey({
@@ -107,6 +184,9 @@ export function useNetwork({
 
     session.setCallbacks({
       sendSignal,
+      sendPooledSignal,
+      enqueueControlAction: controlActions.enqueueAction,
+      blsActionKey,
       onActivity,
       onStateChange: setNetworkSnapshot,
     });
@@ -135,6 +215,9 @@ export function useNetwork({
     publicKey,
     operatorPrivateKey,
     operator,
+    blsActionKey,
+    controlActions,
+    sendPooledSignal,
     sendSignal,
     session,
     tableCapacity,
@@ -143,7 +226,9 @@ export function useNetwork({
 
   useListenForSignals(playerAddress, async (signalData) => {
     console.log('handleSignal', signalData);
-    await session.handleSignal(signalData);
+    await controlActions.enqueueAction('RTC signal', async () => {
+      await session.handleSignal(signalData);
+    }, { dependsOn: [blsActionKey] });
   });
 
   useEffect(() => () => {
@@ -169,73 +254,25 @@ export function useNetwork({
   }, [session]);
 
   const subscribeTo = useCallback(async (peerPlayerAddress, peerAnnouncePubKey, callback, options = {}) => {
-    const keys = blsKeys ?? await generateKeys(tableDetails);
-    const generatedPublicKey = `0x${keys.publicKey}`;
-    if (
-      mySeatAnnouncePublicKey
-      && normalizeAddress(generatedPublicKey) !== normalizeAddress(mySeatAnnouncePublicKey)
-    ) {
-      throw new Error(
-        'Generated BLS key does not match the announce public key stored on-chain for this table. Rejoin this table so the table stores the current deterministic announce key.',
-      );
-    }
-    session.update({
-      playerAddress,
-      operator: keys.operator,
-      tableId,
-      lobbyId,
-      publicKey: keys.publicKey,
-      privateKey: keys.privateKey,
-      operatorPrivateKey: keys.operatorPrivateKey,
-      players,
-      isTableFull,
-      tableCapacity,
-    });
-    session.setLocalMediaStream(localMediaStream);
-    await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback, options);
+    await controlActions.enqueueAction('RTC offer', async () => {
+      await session.subscribeTo(peerPlayerAddress, peerAnnouncePubKey, callback, options);
+    }, { dependsOn: [blsActionKey] });
   }, [
-    blsKeys,
-    generateKeys,
-    isTableFull,
-    localMediaStream,
-    lobbyId,
-    mySeatAnnouncePublicKey,
-    playerAddress,
-    players,
+    blsActionKey,
+    controlActions,
     session,
-    tableCapacity,
-    tableDetails,
-    tableId,
   ]);
 
   const prepareNetworkSession = useCallback(async () => {
-    const keys = blsKeys ?? await generateKeys(tableDetails);
-    session.update({
-      playerAddress,
-      operator: keys.operator,
-      tableId,
-      lobbyId,
-      publicKey: keys.publicKey,
-      privateKey: keys.privateKey,
-      operatorPrivateKey: keys.operatorPrivateKey,
-      players,
-      isTableFull,
-      tableCapacity,
-    });
-    session.setLocalMediaStream(localMediaStream);
-    return keys;
+    return controlActions.enqueueAction(
+      'BLS key generation',
+      prepareNetworkSessionNow,
+      { key: blsActionKey, cacheable: true },
+    );
   }, [
-    blsKeys,
-    generateKeys,
-    isTableFull,
-    localMediaStream,
-    lobbyId,
-    playerAddress,
-    players,
-    session,
-    tableCapacity,
-    tableDetails,
-    tableId,
+    blsActionKey,
+    controlActions,
+    prepareNetworkSessionNow,
   ]);
 
   return [

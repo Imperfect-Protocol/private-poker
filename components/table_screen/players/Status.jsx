@@ -29,6 +29,19 @@ export default function Status({
     );
   }
 
+  if (networkState === 'disconnected') {
+    return (
+      <>
+        <p className="text-xs font-mono text-red-300 font-black animate-pulse">
+          Disconnected
+        </p>
+        {chipStack != null && (
+          <ChipAmount amount={chipStack} isMe={isMe} />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <p className="text-xs font-mono text-slate-500 font-black">Sitting Out</p>

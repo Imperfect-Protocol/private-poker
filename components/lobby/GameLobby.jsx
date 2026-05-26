@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRtcSessionPool } from '@/hooks/useRtcSessionPool';
+
+const formatSeat = (value) => (value ? value.slice(2, 4).toUpperCase() : '??');
 
 // 1. EXTRACTED COMPONENT: Prevents unmounting/remounting on every parent render
 const TableRow = ({ table, highlight = false, isJoined= false }) => {
@@ -61,9 +63,23 @@ const TableRow = ({ table, highlight = false, isJoined= false }) => {
   );
 };
 
-export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, userTables = [] }) {
+export default function GameLobby({ tables = [], lobbyId, userTables = [] }) {
   useRtcSessionPool({ role: 'lobby' });
   const [searchQuery, setSearchQuery] = useState('');
+  const [waitingPeer, setWaitingPeer] = useState(null);
+
+  useEffect(() => {
+    const handleWaitingPeer = (event) => {
+      const detail = event.detail ?? {};
+      if (String(detail.lobbyId) !== String(lobbyId)) return;
+      setWaitingPeer(detail);
+    };
+
+    window.addEventListener('private-poker:peer-waiting-for-table', handleWaitingPeer);
+    return () => {
+      window.removeEventListener('private-poker:peer-waiting-for-table', handleWaitingPeer);
+    };
+  }, [lobbyId]);
 
   // 2. MEMOIZATION: Only recalculate arrays when data or search changes
   const { myTables, otherTables } = useMemo(() => {
@@ -85,6 +101,39 @@ export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, u
 
   return (
     <div className="flex flex-col gap-8 w-full">
+      {waitingPeer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+          <div className="w-[min(420px,calc(100vw-32px))] rounded-xl border border-yellow-300/50 bg-slate-950 p-6 text-center shadow-[0_0_45px_rgba(250,204,21,0.24)]">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-yellow-300">
+              Table Waiting
+            </p>
+            <h2 className="mt-3 text-2xl font-black uppercase tracking-tight text-slate-50">
+              Hey, {formatSeat(waitingPeer.from)} is waiting for you!
+            </h2>
+            <p className="mt-3 font-mono text-xs text-slate-300">
+              Open the table tab so the peer connection can finish.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <a
+                href={`/tables/${waitingPeer.tableId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setWaitingPeer(null)}
+                className="cursor-pointer rounded-lg bg-yellow-300 px-5 py-2 text-xs font-black uppercase tracking-widest text-slate-950 transition-colors hover:bg-yellow-200"
+              >
+                Open Table
+              </a>
+              <button
+                type="button"
+                onClick={() => setWaitingPeer(null)}
+                className="cursor-pointer rounded-lg border border-slate-600 px-5 py-2 text-xs font-black uppercase tracking-widest text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
+              >
+                Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- SECTION 1: MY ACTIVE SESSIONS --- */}
       {myTables.length > 0 && (

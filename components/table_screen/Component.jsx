@@ -24,6 +24,27 @@ const payoutClockPositions = {
   11: { left: '35%', top: '21%' },
 };
 
+function NextHandCountdown({ onComplete }) {
+  const [seconds, setSeconds] = useState(10);
+  const completedRef = useRef(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSeconds((value) => Math.max(value - 1, 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (seconds !== 0 || completedRef.current) return;
+    completedRef.current = true;
+    onComplete?.();
+  }, [onComplete, seconds]);
+
+  return `00:${String(seconds).padStart(2, '0')}`;
+}
+
 function getSeatingArrangement(numPlayers) {
   switch (numPlayers) {
     case 2: return [6, 12];
@@ -70,9 +91,7 @@ export default function TableScreen({
   const hasDimOverlay = Children.toArray(children).length > 0;
   const communityCards = parseCards(tableData?.current_hand?.community_cards);
   const showResult = Boolean(gameState?.resultText);
-  const [nextHandCountdown, setNextHandCountdown] = useState(10);
   const showNextHandCountdown = showResult && Boolean(gameState?.canStartNextHand);
-  const countdownText = `00:${String(nextHandCountdown).padStart(2, '0')}`;
   const isCheatResult = Boolean(gameState?.cheat);
   const winnerAddress = gameState?.resultWinner == null
     ? null
@@ -95,37 +114,16 @@ export default function TableScreen({
       : null;
   const resultColorClass = isCheatResult
     ? gameState.cheat.isViewerCheater ? 'text-red-300' : 'text-purple-300'
-    : gameState.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300';
+    : gameState?.resultText === 'You Win' ? 'text-emerald-300' : 'text-red-300';
   const payoutStyle = payoutPositionStyle(tableData, currentPlayerAddress, gameState?.payout?.winner);
-  const countdownCompletedRef = useRef(false);
-
-  useEffect(() => {
-    if (!showNextHandCountdown) {
-      setNextHandCountdown(10);
-      countdownCompletedRef.current = false;
-      return undefined;
-    }
-
-    setNextHandCountdown(10);
-    countdownCompletedRef.current = false;
-    const timer = setInterval(() => {
-      setNextHandCountdown((value) => Math.max(value - 1, 0));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [showNextHandCountdown]);
-
-  useEffect(() => {
-    if (!showNextHandCountdown || nextHandCountdown !== 0 || countdownCompletedRef.current) return;
-    countdownCompletedRef.current = true;
-    onNextHandCountdownComplete?.();
-  }, [nextHandCountdown, onNextHandCountdownComplete, showNextHandCountdown]);
 
   return (
     <main className="min-h-screen bg-slate-950 p-4 md:px-4 md:py-4 text-white relative flex flex-col">
       <Title
         tableName={tableData.name}
-        rightText={showNextHandCountdown ? countdownText : null}
+        rightText={showNextHandCountdown ? (
+          <NextHandCountdown onComplete={onNextHandCountdownComplete} />
+        ) : null}
       />
 
       <div className="flex-1 flex items-center justify-center relative">
