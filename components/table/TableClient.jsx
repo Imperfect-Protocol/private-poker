@@ -38,6 +38,12 @@ const ensureHexPrefix = (value) => {
 const rtcMessageLabels = (message) => {
   if (!message?.type) return ['Unknown RTC Message'];
   if (message.type === 'ChatMessage') return [message.text ?? 'Chat Message'];
+  if (message.type === 'SyncSequence') {
+    const sequenceNumbers = message.sequence_numbers ?? message.seen_sequences ?? [];
+    return [
+      `SyncSequence from Player ${Number(message.from ?? 0) + 1} [${sequenceNumbers.join(', ')}]`,
+    ];
+  }
   if (message.type === 'POKER_ACTION' || message.type === 'POKER_GAME_MESSAGE') {
     if (message.wire?.log_lines?.length > 0) {
       return message.wire.log_lines;
@@ -110,6 +116,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     if (
       incoming?.type === 'POKER_ACTION'
       || incoming?.type === 'POKER_GAME_MESSAGE'
+      || incoming?.type === 'SyncSequence'
       || incoming?.type === 'ChatMessage'
     ) {
       pokerTableRef.current?.handleNetworkMessage(incoming, playerAddress);

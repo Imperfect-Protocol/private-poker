@@ -3,8 +3,12 @@ import {
   G1,
   bytesToHex,
   hexToBytes,
+  make_public_key_from_compressed_slice,
   make_public_key_from_signing_key,
+  make_signature_from_compressed_slice,
   make_signing_key_from_seed,
+  sign as blsSign,
+  verify as blsVerify,
 } from '@/lib/crum_bls';
 import {
   HAND_ID,
@@ -28,9 +32,12 @@ import { holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
 const POKER_ACTION_MESSAGE = 'POKER_ACTION';
 const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
+const SYNC_SEQUENCE_MESSAGE = 'SyncSequence';
 const CHAT_MESSAGE = 'ChatMessage';
+const ACTION_SIGNATURE_SCHEME = 'BLS12-381-G1-PK-G2-SIG';
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
 const BAD_UNMASK_G1 = G1.BASE.toRawBytes(true);
+const textEncoder = new TextEncoder();
 
 function shallowEqual(left, right) {
   const leftKeys = Object.keys(left ?? {});
@@ -147,6 +154,7 @@ function encodeWire(wire) {
     hand_id: wire.hand_id,
     from: wire.from,
     sequence: wire.sequence,
+    sequence_number: wire.sequence_number ?? null,
     expected_state: wire.expected_state,
     log_lines: wire.log_lines,
   };
@@ -192,15 +200,17 @@ function encodeWire(wire) {
 
 function decodeWire(encoded) {
   if (encoded.nop) {
-    return new PokerActionEnvelopeWire({
+    const wire = new PokerActionEnvelopeWire({
       table_id: encoded.table_id,
       hand_id: encoded.hand_id,
       from: encoded.from,
       sequence: encoded.sequence,
+      sequence_number: encoded.sequence_number ?? null,
       expected_state: encoded.expected_state,
       nop: encoded.nop,
       log_lines: encoded.log_lines ?? [],
     });
+    return wire;
   }
 
   const action = encoded.action ? { ...encoded.action } : null;
@@ -230,6 +240,7 @@ function decodeWire(encoded) {
     hand_id: encoded.hand_id,
     from: encoded.from,
     sequence: encoded.sequence,
+    sequence_number: encoded.sequence_number ?? null,
     expected_state: encoded.expected_state,
     action,
     submit: action ? encoded.submit : decodeSubmit(encoded.submit),
@@ -263,6 +274,96 @@ function decodeSubmit(submit) {
     method: submit.method,
     args,
   };
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = canonicalize(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalize(value));
+}
+
+function ensureHexPrefix(value) {
+  const normalized = String(value ?? '');
+  return normalized.startsWith('0x') ? normalized : `0x${normalized}`;
+}
+
+function historyEntryPayload(wire) {
+  return textEncoder.encode(canonicalJson({
+    type: 'PokerHandAction',
+    wire,
+  }));
+}
+
+function wireHistoryKey(wire) {
+  if (!wire) return '';
+  return [
+    wire.hand_id,
+    wire.sequence_number ?? '',
+    wire.from ?? '',
+    wire.sequence ?? '',
+    wire.nop ? 'nop' : wire.submit?.method ?? wire.action?.type ?? 'action',
+  ].join(':');
+}
+
+function tableSequenceNumber(game) {
+  return Number(game?.clientState?.table?.sequence_number ?? 0);
+}
+
+function playerCount(game, fallback = 0) {
+  return Number(
+    game?.clientState?.table?.get_current_player_count?.()
+      ?? game?.clientState?.table?.get_max_players?.()
+      ?? fallback
+      ?? 0,
+  );
+}
+
+function emptySeenSequences(count) {
+  return Array(Math.max(Number(count ?? 0), 0)).fill(0);
+}
+
+function normalizeSeenSequences(seenSequences, count) {
+  const normalized = emptySeenSequences(count);
+  (seenSequences ?? []).forEach((sequence, index) => {
+    if (index < normalized.length) normalized[index] = Number(sequence ?? 0);
+  });
+  return normalized;
+}
+
+function historySequenceNumbers(message, count) {
+  return normalizeSeenSequences(
+    message?.sequence_numbers ?? message?.seen_sequences,
+    count,
+  );
+}
+
+function formatSequenceNumbers(sequences) {
+  return `[${(sequences ?? []).join(', ')}]`;
+}
+
+function highestSequenceSeat(seenSequences) {
+  let highestSeat = 0;
+  let highestSequence = -1;
+  seenSequences.forEach((sequence, seat) => {
+    const numericSequence = Number(sequence ?? 0);
+    if (numericSequence > highestSequence) {
+      highestSequence = numericSequence;
+      highestSeat = seat;
+    }
+  });
+  return { highestSeat, highestSequence };
 }
 
 function makePokerTable(numPlayers) {
@@ -798,6 +899,9 @@ export function usePokerTable({
   const cheatReportRef = useRef(null);
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
+  const handHistoryRef = useRef([]);
+  const knownSeenSequencesRef = useRef([]);
+  const previousConnectedRef = useRef(false);
   const protocolActionInFlightRef = useRef(null);
   const debugCheatsRef = useRef({
     badPk: false,
@@ -805,6 +909,9 @@ export function usePokerTable({
     badUnmask: false,
   });
   const tableSeats = useMemo(() => table?.seats ?? [], [table?.seats]);
+  const tableId = table?.tableData?.id;
+  const tableMaxSeats = table?.tableData?.maxSeats;
+  const currentSeatNo = table?.currentSeat?.seatNo;
 
   const senderForSeat = useCallback((seatNo) => {
     const seat = tableSeats[seatNo];
@@ -838,10 +945,6 @@ export function usePokerTable({
     lines.forEach((line) => appendGameLog(line, senderForLine(line, fallbackSeatNo)));
   }, [appendGameLog, senderForLine]);
 
-  const tableId = table?.tableData?.id;
-  const tableMaxSeats = table?.tableData?.maxSeats;
-  const currentSeatNo = table?.currentSeat?.seatNo;
-
   const resetGame = useCallback(() => {
     const numPlayers = Number(tableMaxSeats || 0);
     if (!numPlayers || tableId == null) return null;
@@ -865,10 +968,13 @@ export function usePokerTable({
 
   useEffect(() => {
     resetGame();
+    handHistoryRef.current = [];
+    knownSeenSequencesRef.current = emptySeenSequences(tableMaxSeats);
+    previousConnectedRef.current = false;
     cheatReportRef.current = null;
     setCheatReport(null);
     setTerminalResult(null);
-  }, [resetGame]);
+  }, [resetGame, tableMaxSeats]);
 
   const updateView = useCallback(({ force = false } = {}) => {
     const game = gameRef.current;
@@ -921,13 +1027,99 @@ export function usePokerTable({
     return nextGame;
   }, [currentSeatNo, prepareNetworkSession, resetGame]);
 
+  const signWireHistoryEntry = useCallback((wire, game = gameRef.current) => {
+    if (wire?.nop || !wire?.sequence_number || !game?.signingKey || !game?.publicKey) return null;
+    const encodedWire = encodeWire(wire);
+    const signature = blsSign(historyEntryPayload(encodedWire), game.signingKey);
+    return {
+      sequence_number: Number(encodedWire.sequence_number ?? 0),
+      from: encodedWire.from,
+      wire: encodedWire,
+      action_signature: {
+        scheme: ACTION_SIGNATURE_SCHEME,
+        signer_seat: encodedWire.from,
+        public_key: hexPoint(game.publicKey.toRawBytes(true)),
+        signature: hexPoint(signature.toRawBytes(true)),
+      },
+    };
+  }, []);
+
+  const verifyHistoryEntrySignature = useCallback((entry) => {
+    const wire = entry?.wire;
+    const signature = entry?.action_signature;
+    const signerSeat = Number(entry?.from ?? wire?.from);
+    if (!wire || !signature?.signature || !Number.isInteger(signerSeat)) return false;
+    if (Number(wire.from) !== signerSeat) return false;
+    if (signature.scheme !== ACTION_SIGNATURE_SCHEME) return false;
+    if (signature.signer_seat != null && Number(signature.signer_seat) !== signerSeat) return false;
+
+    const publicKeyCandidates = [
+      signature.public_key,
+      tableSeats[signerSeat]?.announcePublicKey,
+    ].filter(Boolean);
+
+    return publicKeyCandidates.some((candidate) => {
+      try {
+        const publicKey = make_public_key_from_compressed_slice(hexToBytes(ensureHexPrefix(candidate)));
+        const signed = make_signature_from_compressed_slice(hexToBytes(ensureHexPrefix(signature.signature)));
+        return blsVerify(historyEntryPayload(wire), publicKey, signed);
+      } catch {
+        return false;
+      }
+    });
+  }, [tableSeats]);
+
+  const rememberHistoryEntry = useCallback((entry) => {
+    if (!entry?.wire?.sequence_number) return;
+    const key = wireHistoryKey(entry.wire);
+    const currentHistory = handHistoryRef.current ?? [];
+    if (currentHistory.some((entry) => wireHistoryKey(entry.wire) === key)) return;
+    handHistoryRef.current = [
+      ...currentHistory,
+      entry,
+    ].sort((left, right) => Number(left.sequence_number ?? 0) - Number(right.sequence_number ?? 0));
+  }, []);
+
+  const rememberWire = useCallback((wire, entry = null) => {
+    const historyEntry = entry ?? signWireHistoryEntry(wire);
+    if (historyEntry) rememberHistoryEntry(historyEntry);
+  }, [rememberHistoryEntry, signWireHistoryEntry]);
+
+  const noteSeenSequence = useCallback((seatNo, sequenceNumber) => {
+    if (seatNo == null || seatNo < 0) return;
+    const count = Number(tableMaxSeats || playerCount(gameRef.current));
+    const seenSequences = normalizeSeenSequences(knownSeenSequencesRef.current, count);
+    seenSequences[seatNo] = Math.max(Number(seenSequences[seatNo] ?? 0), Number(sequenceNumber ?? 0));
+    knownSeenSequencesRef.current = seenSequences;
+  }, [tableMaxSeats]);
+
   const publishWire = useCallback((wire) => {
+    const game = gameRef.current;
+    const entry = signWireHistoryEntry(wire, game);
+    if (entry) rememberHistoryEntry(entry);
+    const count = Number(tableMaxSeats || playerCount(game));
+    const sequenceNumbers = normalizeSeenSequences(knownSeenSequencesRef.current, count);
+    if (currentSeatNo != null) sequenceNumbers[currentSeatNo] = tableSequenceNumber(game);
     const message = {
       type: POKER_GAME_MESSAGE,
+      table_id: wire.table_id,
+      hand_id: wire.hand_id,
+      timestamp: Date.now(),
+      sequence_number: wire.sequence_number ?? null,
+      sequence_numbers: sequenceNumbers,
+      hand_history: [...(handHistoryRef.current ?? [])],
       wire: encodeWire(wire),
     };
     publishMessage(message);
-  }, [publishMessage]);
+    noteSeenSequence(wire.from, wire.sequence_number);
+  }, [
+    currentSeatNo,
+    noteSeenSequence,
+    publishMessage,
+    rememberHistoryEntry,
+    signWireHistoryEntry,
+    tableMaxSeats,
+  ]);
 
   const applyDebugCheatsToWire = useCallback((wire, game) => {
     const cheats = debugCheatsRef.current;
@@ -986,7 +1178,7 @@ export function usePokerTable({
     if (!game || currentPlayer == null) return null;
     const wire = game.clientState.submit_nop({
       current_player: currentPlayer,
-      reason: 'your turn not mine',
+      reason: 'hand history forwarded',
     });
     publishWire(wire);
     return wire;
@@ -1182,6 +1374,8 @@ export function usePokerTable({
     game.clientState.seen.clear();
     game.shuffleTrace = null;
     game.seenFinished = false;
+    handHistoryRef.current = [];
+    knownSeenSequencesRef.current = emptySeenSequences(game.clientState.table.get_current_player_count());
     protocolActionInFlightRef.current = null;
 
     const events = game.clientState.table.drain_events?.() ?? [];
@@ -1190,10 +1384,208 @@ export function usePokerTable({
     return true;
   }, [appendTraceLines, updateView]);
 
+  const applyHistoryEntries = useCallback(async (historyEntries = [], playerAddress = null) => {
+    const game = gameRef.current ?? resetGame();
+    if (!game || !Array.isArray(historyEntries)) return true;
+
+    const orderedEntries = [...historyEntries]
+      .sort((left, right) => Number(left.sequence_number ?? 0) - Number(right.sequence_number ?? 0));
+    let latestAppliedAction = null;
+
+    for (const entry of orderedEntries) {
+      if (!verifyHistoryEntrySignature(entry)) {
+        appendGameLog('Invalid signed hand history entry', senderForAddress(playerAddress), 'error');
+        updateView({ force: true });
+        return false;
+      }
+
+      const wire = decodeWire(entry.wire);
+      rememberWire(wire, entry);
+      noteSeenSequence(wire.from, wire.sequence_number);
+
+      const entrySequence = Number(entry.sequence_number ?? entry.wire?.sequence_number ?? 0);
+      if (entrySequence <= tableSequenceNumber(game)) continue;
+
+      while (wire.hand_id > game.clientState.hand_id) {
+        if (!startNextHand()) return true;
+      }
+      if (wire.hand_id !== game.clientState.hand_id) continue;
+
+      if (wire.nop) {
+        if (game.clientState.apply_nop_wire(wire)) {
+          rememberWire(wire, entry);
+          noteSeenSequence(wire.from, wire.sequence_number);
+        }
+        continue;
+      }
+
+      let envelope;
+      let appliedResult;
+      try {
+        envelope = wire.to_envelope();
+        appliedResult = game.clientState.apply_envelope_result(envelope);
+      } catch (error) {
+        appendGameLog(
+          formatPokerProtocolError(error, wire?.action?.player),
+          senderForAddress(playerAddress),
+          'error',
+        );
+        updateView({ force: true });
+        return true;
+      }
+
+      const { applied, result } = appliedResult;
+      if (applied) {
+        rememberWire(wire, entry);
+        noteSeenSequence(wire.from, wire.sequence_number);
+        const displayLines = wire.log_lines?.length > 0
+          ? wire.log_lines
+          : eventDisplayLines(result?.events);
+        latestAppliedAction = { displayLines, from: envelope.from };
+      }
+    }
+
+    if (latestAppliedAction) {
+      appendTraceLines(latestAppliedAction.displayLines, latestAppliedAction.from);
+    }
+    updateView({ force: true });
+    return true;
+  }, [
+    appendGameLog,
+    appendTraceLines,
+    noteSeenSequence,
+    rememberWire,
+    resetGame,
+    senderForAddress,
+    startNextHand,
+    updateView,
+    verifyHistoryEntrySignature,
+  ]);
+
+  const continueAfterPokerMessage = useCallback(async () => {
+    const game = gameRef.current;
+    const hand = game?.clientState.current_hand();
+    const handState = hand?.get_current_state();
+    if (!game || !handState || handState?.is_finished()) {
+      updateView({ force: true });
+      return true;
+    }
+
+    if (handState.get_current_player() !== game.clientState.player_index) {
+      submitNop(game, handState.get_current_player());
+      updateView({ force: true });
+      return true;
+    }
+
+    if (!isHumanActionState(handState)) {
+      await submitProtocolAction();
+      return true;
+    }
+
+    updateView({ force: true });
+    return true;
+  }, [submitNop, submitProtocolAction, updateView]);
+
+  const sendSyncSequence = useCallback(() => {
+    const game = gameRef.current ?? resetGame();
+    if (!game || currentSeatNo == null) return false;
+    const count = playerCount(game, tableMaxSeats);
+    const seenSequences = emptySeenSequences(count);
+    seenSequences[currentSeatNo] = tableSequenceNumber(game);
+    publishMessage({
+      type: SYNC_SEQUENCE_MESSAGE,
+      table_id: game.clientState.table_id,
+      hand_id: game.clientState.hand_id,
+      timestamp: Date.now(),
+      origin_seat: 0,
+      from: currentSeatNo,
+      hops: 1,
+      sequence_numbers: seenSequences,
+    });
+    appendGameLog(`SyncSequence sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
+    return true;
+  }, [appendGameLog, currentSeatNo, publishMessage, resetGame, tableMaxSeats]);
+
+  const handleSyncSequence = useCallback((message, playerAddress = null) => {
+    const game = gameRef.current ?? resetGame();
+    if (!game || currentSeatNo == null) return true;
+    if (message?.table_id !== game.clientState.table_id || message?.hand_id !== game.clientState.hand_id) {
+      return true;
+    }
+
+    const count = playerCount(game, tableMaxSeats);
+    const seenSequences = historySequenceNumbers(message, count);
+    if (message.phase !== 'result') {
+      seenSequences[currentSeatNo] = tableSequenceNumber(game);
+    }
+    knownSeenSequencesRef.current = seenSequences;
+    appendGameLog(`SyncSequence received ${formatSequenceNumbers(seenSequences)}`, senderForAddress(playerAddress));
+
+    if (message.phase === 'result') {
+      if (currentSeatNo === Number(message.highest_seat ?? -1)) {
+        return continueAfterPokerMessage();
+      }
+
+      if (currentSeatNo === Number(message.origin_seat ?? -1) && Number(message.hops ?? 0) >= Math.max(count, 1)) {
+        return true;
+      }
+
+      publishMessage({
+        ...message,
+        from: currentSeatNo,
+        hops: Number(message.hops ?? 0) + 1,
+        sequence_numbers: seenSequences,
+        seen_sequences: undefined,
+      });
+      appendGameLog(`SyncSequence result sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
+      return true;
+    }
+
+    if (currentSeatNo === 0 && Number(message.hops ?? 0) >= Math.max(count, 1)) {
+      const { highestSeat } = highestSequenceSeat(seenSequences);
+      publishMessage({
+        type: SYNC_SEQUENCE_MESSAGE,
+        table_id: game.clientState.table_id,
+        hand_id: game.clientState.hand_id,
+        timestamp: Date.now(),
+        phase: 'result',
+        origin_seat: 0,
+        from: currentSeatNo,
+        hops: 1,
+        highest_seat: highestSeat,
+        sequence_numbers: seenSequences,
+      });
+      appendGameLog(`SyncSequence result sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
+      if (highestSeat === currentSeatNo) {
+        return continueAfterPokerMessage();
+      }
+      return true;
+    }
+
+    publishMessage({
+      ...message,
+      from: currentSeatNo,
+      hops: Number(message.hops ?? 0) + 1,
+      sequence_numbers: seenSequences,
+      seen_sequences: undefined,
+    });
+    appendGameLog(`SyncSequence sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
+    return true;
+  }, [
+    appendGameLog,
+    continueAfterPokerMessage,
+    currentSeatNo,
+    publishMessage,
+    resetGame,
+    senderForAddress,
+    tableMaxSeats,
+  ]);
+
   const handleNetworkMessage = useCallback(async (message, playerAddress = null) => {
     if (
       message?.type !== POKER_ACTION_MESSAGE
       && message?.type !== POKER_GAME_MESSAGE
+      && message?.type !== SYNC_SEQUENCE_MESSAGE
       && message?.type !== CHAT_MESSAGE
     ) return false;
 
@@ -1202,8 +1594,24 @@ export function usePokerTable({
       return true;
     }
 
+    if (message.type === SYNC_SEQUENCE_MESSAGE) {
+      return handleSyncSequence(message, playerAddress);
+    }
+
     const game = gameRef.current ?? resetGame();
     if (!game) return true;
+
+    const handHistory = Array.isArray(message.hand_history)
+      ? message.hand_history
+      : [];
+    if (handHistory.length > 0) {
+      const appliedHistory = await applyHistoryEntries(handHistory, playerAddress);
+      if (!appliedHistory) return true;
+      knownSeenSequencesRef.current = historySequenceNumbers(
+        message,
+        playerCount(game, tableMaxSeats),
+      );
+    }
 
     const wire = decodeWire(message.wire);
     while (wire.hand_id > game.clientState.hand_id) {
@@ -1211,23 +1619,16 @@ export function usePokerTable({
     }
 
     if (wire.nop) {
-      const applied = game.clientState.apply_nop_wire(wire);
-      if (!applied) return true;
+      game.clientState.apply_nop_wire(wire);
+      noteSeenSequence(wire.from, wire.sequence_number);
+      return continueAfterPokerMessage();
+    }
 
-      const hand = game.clientState.current_hand();
-      const handState = hand?.get_current_state();
-      if (handState?.get_current_player() !== game.clientState.player_index) {
-        submitNop(game, handState?.get_current_player());
-        return true;
-      }
-
-      if (!isHumanActionState(handState)) {
-        await submitProtocolAction();
-        return true;
-      }
-
-      updateView({ force: true });
-      return true;
+    const wireAlreadyInHistory = handHistory.some((entry) => (
+      wireHistoryKey(entry?.wire) === wireHistoryKey(encodeWire(wire))
+    ));
+    if (wireAlreadyInHistory) {
+      return continueAfterPokerMessage();
     }
 
     let envelope;
@@ -1252,6 +1653,7 @@ export function usePokerTable({
 
     const { applied, result } = appliedResult;
     if (applied) {
+      noteSeenSequence(wire.from, wire.sequence_number);
       const displayLines = wire.log_lines?.length > 0
         ? wire.log_lines
         : eventDisplayLines(result?.events);
@@ -1260,32 +1662,23 @@ export function usePokerTable({
       const handState = hand?.get_current_state();
       if (handState?.is_finished()) {
         updateView({ force: true });
-        publishMessage(message);
         return true;
       }
 
-      if (handState?.get_current_player() !== game.clientState.player_index) {
-        submitNop(game, handState?.get_current_player());
-        return true;
-      }
-
-      if (!isHumanActionState(handState)) {
-        await submitProtocolAction();
-        return true;
-      }
-
-      updateView({ force: true });
+      return continueAfterPokerMessage();
     }
     return true;
   }, [
     appendGameLog,
     appendTraceLines,
-    publishMessage,
+    applyHistoryEntries,
+    continueAfterPokerMessage,
+    handleSyncSequence,
+    noteSeenSequence,
     resetGame,
     senderForAddress,
     startNextHand,
-    submitNop,
-    submitProtocolAction,
+    tableMaxSeats,
     updateView,
   ]);
 
@@ -1353,6 +1746,24 @@ export function usePokerTable({
       updateView();
     });
   }, [ensureKeys, networkSnapshot?.status, table?.currentSeat?.seatNo, updateView]);
+
+  useEffect(() => {
+    const connected = networkSnapshot?.inboundState === 'Connected'
+      && networkSnapshot?.outboundState === 'Connected';
+    const wasConnected = previousConnectedRef.current;
+    previousConnectedRef.current = connected;
+
+    if (!connected || wasConnected || currentSeatNo !== 0) return;
+    ensureKeys().then(() => {
+      sendSyncSequence();
+    });
+  }, [
+    currentSeatNo,
+    ensureKeys,
+    networkSnapshot?.inboundState,
+    networkSnapshot?.outboundState,
+    sendSyncSequence,
+  ]);
 
   const actionBarProps = useMemo(() => {
     const remainingChips = Math.max(Number(snapshot.maxBet ?? 0), 0);
