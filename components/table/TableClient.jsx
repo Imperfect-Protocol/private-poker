@@ -85,6 +85,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [joinRequest, setJoinRequest] = useState(null);
   const [networkEnabled, setNetworkEnabled] = useState(false);
   const [showReJoinDialog, setShowReJoinDialog] = useState(false);
+  const [forceHideReJoinDialog, setForceHideReJoinDialog] = useState(false);
   const [reJoinDismissed, setReJoinDismissed] = useState(false);
   const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [topUpRequest, setTopUpRequest] = useState(null);
@@ -276,6 +277,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     setJoinRequest(null);
     setNetworkEnabled(false);
     setShowReJoinDialog(false);
+    setForceHideReJoinDialog(false);
     setReJoinDismissed(false);
   }, [lobbyId, tableId, currentPlayerAddress]);
 
@@ -291,17 +293,17 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   }, [showBuyInDialog, table.isSeated, table.tableData]);
 
   useEffect(() => {
-    if (!table.hasJoinedTable || joinRequest || reJoinDismissed) return;
+    if (!table.hasJoinedTable || joinRequest || reJoinDismissed || forceHideReJoinDialog) return;
     setShowReJoinDialog(true);
-  }, [joinRequest, reJoinDismissed, table.hasJoinedTable]);
+  }, [forceHideReJoinDialog, joinRequest, reJoinDismissed, table.hasJoinedTable]);
 
   useEffect(() => {
-    if (!table.hasJoinedTable || joinRequest || showReJoinDialog) return;
+    if (!table.hasJoinedTable || joinRequest || showReJoinDialog || forceHideReJoinDialog) return;
     if (p2pEstablished) return;
 
     setReJoinDismissed(false);
     setShowReJoinDialog(true);
-  }, [joinRequest, p2pEstablished, showReJoinDialog, table.hasJoinedTable]);
+  }, [forceHideReJoinDialog, joinRequest, p2pEstablished, showReJoinDialog, table.hasJoinedTable]);
 
   if (table.isLoading || !table.tableData) {
     return (
@@ -329,6 +331,19 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         return;
       case '/dupenext':
         table.armDuplicateNextMessage?.();
+        setInput('');
+        return;
+      case '/showtable':
+        setForceHideReJoinDialog(true);
+        setShowReJoinDialog(false);
+        addDebugMessage({ sender: 'Game', text: 'P2P connection dialog hidden' });
+        setInput('');
+        return;
+      case '/connect':
+        setForceHideReJoinDialog(false);
+        setReJoinDismissed(false);
+        setShowReJoinDialog(true);
+        addDebugMessage({ sender: 'Game', text: 'P2P connection dialog shown' });
         setInput('');
         return;
       case '/badshuffle':
@@ -403,7 +418,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         />
       )}
 
-      {table.hasJoinedTable && showReJoinDialog && !joinRequest && !p2pEstablished && (
+      {table.hasJoinedTable && showReJoinDialog && !forceHideReJoinDialog && !joinRequest && !p2pEstablished && (
         <ReJoinTableFlowDialog
           table={table}
           networkSnapshot={table.networkSnapshot}

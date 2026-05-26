@@ -24,7 +24,7 @@ export default function TablePlayer({
   const cardSize = isMe ? 'lg' : 'md';
 
   return (
-    <div className={`absolute ${positionClass} transition-all duration-700 ease-in-out z-20`}>
+    <div className={`absolute ${positionClass} ${isMe ? 'translate-y-3 md:translate-y-5' : ''} transition-all duration-700 ease-in-out z-20`}>
       <div className="flex flex-col items-center group relative">
         {!isEmptySeat && (
           <div className={`absolute flex gap-1 z-0 ${isMe ? '-top-12 md:-top-16' : '-top-[2.75rem] md:-top-[3.1rem]'}`}>

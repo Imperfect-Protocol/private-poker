@@ -17,6 +17,7 @@ export default function Component({
   callAmount = 0,
   primaryLabel = 'Raise',
   primaryAmount = null,
+  remainingChips = 0,
   onFold,
   onCall,
   onRaise,
@@ -25,6 +26,7 @@ export default function Component({
   const sliderMin = Math.min(minBet, maxBet);
   const sliderMax = Math.max(maxBet, sliderMin);
   const clampedBetAmount = Math.max(sliderMin, Math.min(betAmount, sliderMax));
+  const isRaiseAllIn = !hideSlider && !sliderDisabled && remainingChips > 0 && clampedBetAmount >= remainingChips;
 
   const presets = [0, 25, 50, 75, 100];
 
@@ -53,8 +55,9 @@ export default function Component({
           hideCall={hideCall}
           hideFold={hideFold}
           hideRaise={hideRaise}
-          primaryLabel={primaryLabel}
+          primaryLabel={isRaiseAllIn ? 'All In' : primaryLabel}
           primaryAmount={primaryAmount}
+          remainingChips={remainingChips}
           onFold={onFold}
           onCall={onCall}
           onRaise={() => onRaise?.(clampedBetAmount)}

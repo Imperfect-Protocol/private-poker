@@ -2,18 +2,18 @@ import Player from '@/components/table_screen/players/Player';
 import { parseCards } from '@/components/table_screen/Card';
 
 const clockPositions = {
-  12: "top-[-5%] left-1/2 -translate-x-1/2",
-  1: "top-[5%] left-[75%] -translate-x-1/2",
-  2: "top-[20%] left-[92%] -translate-y-1/2",
-  3: "top-1/2 left-[95%] -translate-y-1/2",
-  4: "bottom-[20%] left-[92%] -translate-y-1/2",
-  5: "bottom-[5%] left-[75%] -translate-x-1/2",
-  6: "bottom-[-5%] left-1/2 -translate-x-1/2",
-  7: "bottom-[5%] left-[25%] -translate-x-1/2",
-  8: "bottom-[20%] left-[8%] -translate-y-1/2",
-  9: "top-1/2 left-[5%] -translate-y-1/2",
-  10: "top-[20%] left-[8%] -translate-y-1/2",
-  11: "top-[5%] left-[25%] -translate-x-1/2",
+  12: "top-0 left-1/2 -translate-x-1/2",
+  1: "top-0 left-4/6 -translate-x-1/2",
+  2: "top-2/9 left-4/5 -translate-y-1/2",
+  3: "top-5/9 left-7/8 -translate-y-1/2",
+  4: "top-7/8 left-4/5 -translate-y-1/2",
+  5: "top-7/9 left-5/8 -translate-y-1/2",
+  6: "top-7/9 left-1/2 -translate-x-1/2",
+  7: "top-7/9 left-2/6 -translate-x-1/2",
+  8: "top-7/8 left-1/12 -translate-y-1/2",
+  9: "top-5/9 left-0 -translate-y-1/2",
+  10: "top-2/9 left-1/12 -translate-y-1/2",
+  11: "top-0 left-2/6 -translate-x-1/2",
 };
 
 function getSeatingArrangement(numPlayers) {

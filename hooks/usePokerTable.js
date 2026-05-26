@@ -1836,6 +1836,7 @@ export function usePokerTable({
       hideFold: snapshot.hideFold || callAmount === 0,
       hideRaise: snapshot.onlyCallMode,
       callAmount,
+      remainingChips,
       primaryLabel: allInMode ? 'All In' : snapshot.primaryLabel,
       primaryAmount: snapshot.waitingForBlind || allInMode ? actionAmount : null,
       onFold: () => submitBet(0),

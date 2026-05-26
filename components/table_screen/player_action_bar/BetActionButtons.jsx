@@ -10,11 +10,13 @@ export default function BetActionButtons({
   hideRaise = false,
   primaryLabel = 'Raise',
   primaryAmount = null,
+  remainingChips = 0,
   onFold,
   onCall,
   onRaise,
 }) {
   const actionAmount = primaryAmount ?? betAmount;
+  const isCallAllIn = remainingChips > 0 && callAmount >= remainingChips;
 
   return (
     <div className="flex justify-center gap-3 w-full">
@@ -25,7 +27,7 @@ export default function BetActionButtons({
         <BetActionButton kind={callAmount === 0 ? 'check' : 'call'} disabled={disabled} onClick={onCall}>
           {callAmount === 0 ? 'Check' : (
             <span className="inline-flex items-center justify-center gap-1.5">
-              <span>Call</span>
+              <span>{isCallAllIn ? 'All In' : 'Call'}</span>
               <AmountWithCoin amount={callAmount} iconSize={14} />
             </span>
           )}
