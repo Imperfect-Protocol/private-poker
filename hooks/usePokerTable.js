@@ -477,7 +477,7 @@ function gameStateName(pokerState) {
   return pokerState.type;
 }
 
-function currentGameStateFrom(game, viewerSeatNo = null) {
+function currentGameStateFrom(game, viewerSeatNo = null, cheatReport = null) {
   const hand = game?.clientState.current_hand();
   const viewerPlayerIndex = viewerSeatNo ?? game?.clientState.player_index ?? 0;
   if (!game || !hand) {
@@ -499,6 +499,34 @@ function currentGameStateFrom(game, viewerSeatNo = null) {
   const handState = hand.get_current_state();
   const pokerState = handState.to_enum();
   const seat = 'player' in pokerState ? pokerState.player : handState.get_current_player();
+  if (cheatReport) {
+    const stacks = chipStacks(hand);
+    const activePlayers = hand.betting_state?.active_players ?? [];
+    const allInPlayers = hand.betting_state?.allin_players ?? [];
+    return {
+      state: 'Cheated',
+      seat,
+      canStartNextHand: true,
+      pot: Number(hand.betting_state?.pot?.toString?.() ?? 0),
+      minBet: safeCallAmount(hand, viewerPlayerIndex),
+      maxBet: safeChipsRemaining(hand, viewerPlayerIndex),
+      step: hand.get_small_blind(),
+      chipStacks: stacks,
+      chipStackSizes: chipStackSizes(stacks),
+      hands: hand.get_player_cards().map(() => ({ cards: [], rank: null, isWinner: false })),
+      winner: null,
+      resultText: cheatReport.player === viewerPlayerIndex ? 'Cheater' : 'Game Cheated',
+      resultRank: null,
+      resultWinner: null,
+      payout: null,
+      cheat: {
+        ...cheatReport,
+        isViewerCheater: cheatReport.player === viewerPlayerIndex,
+      },
+      activePlayers,
+      allInPlayers,
+    };
+  }
   const deck = hand.get_poker_deck();
   const isShowdownState = pokerState.type === 'UnmaskShowdown'
     || pokerState.type === 'SubmitPublicKey'
@@ -698,6 +726,35 @@ const formatSeatSender = (address, seatNo) => (
   address ? address.slice(2, 4).toUpperCase() : `P${seatNo + 1}`
 );
 
+function formatPokerProtocolError(error, fallbackPlayer = null) {
+  const cheat = cheatReportFromError(error, fallbackPlayer);
+  if (cheat) {
+    return `Cheat detected: Player ${cheat.player + 1} cheated ${cheat.kind.toLowerCase()}`;
+  }
+
+  return error?.message ?? String(error);
+}
+
+function cheatReportFromError(error, fallbackPlayer = null) {
+  const message = error?.message ?? String(error);
+  const unmaskMatch = message.match(/^Player cheated during unmasking\s+(\d+)$/);
+  if (unmaskMatch) {
+    return {
+      player: Number(unmaskMatch[1]),
+      kind: 'UNMASKING',
+    };
+  }
+
+  if (message === 'Player cheated during shuffle') {
+    return {
+      player: fallbackPlayer == null ? 0 : Number(fallbackPlayer),
+      kind: 'SHUFFLE',
+    };
+  }
+
+  return null;
+}
+
 export function usePokerTable({
   table,
   networkSnapshot,
@@ -735,8 +792,10 @@ export function usePokerTable({
     viewPatch: {},
   });
   const [gameMessages, setGameMessages] = useState([]);
+  const [cheatReport, setCheatReport] = useState(null);
   const [terminalResult, setTerminalResult] = useState(null);
   const gameRef = useRef(null);
+  const cheatReportRef = useRef(null);
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
   const protocolActionInFlightRef = useRef(null);
@@ -806,6 +865,8 @@ export function usePokerTable({
 
   useEffect(() => {
     resetGame();
+    cheatReportRef.current = null;
+    setCheatReport(null);
     setTerminalResult(null);
   }, [resetGame]);
 
@@ -816,7 +877,7 @@ export function usePokerTable({
 
     const viewerSeatNo = currentSeatNo ?? null;
     const patch = tableViewPatch(game.clientState, game.signingKey, viewerSeatNo);
-    const currentGameState = currentGameStateFrom(game, viewerSeatNo);
+    const currentGameState = currentGameStateFrom(game, viewerSeatNo, cheatReportRef.current);
     const protocolActionState = protocolActionStateFrom(game);
     const nextCurrentGameState = !force && shallowEqual(
       lastSnapshotRef.current.currentGameState,
@@ -872,15 +933,24 @@ export function usePokerTable({
     const cheats = debugCheatsRef.current;
     if (cheats.badUnmask && corruptUnmaskWire(wire)) {
       cheats.badUnmask = false;
+      const report = { player: game.clientState.player_index, kind: 'UNMASKING' };
+      cheatReportRef.current = report;
+      setCheatReport(report);
     }
 
     if (wire?.action?.type === 'SubmitPublicKey') {
       if (cheats.badShuffle && corruptShuffleTrace(wire)) {
         cheats.badShuffle = false;
+        const report = { player: wire.action.player, kind: 'SHUFFLE' };
+        cheatReportRef.current = report;
+        setCheatReport(report);
       }
 
       if (cheats.badPk && corruptPublicKey(wire, game)) {
         cheats.badPk = false;
+        const report = { player: wire.action.player, kind: 'PUBLIC KEY' };
+        cheatReportRef.current = report;
+        setCheatReport(report);
       }
     }
 
@@ -926,7 +996,20 @@ export function usePokerTable({
     const game = gameRef.current;
     if (!game) return null;
 
-    const envelope = game.clientState.submit_local_action(action);
+    let envelope;
+    try {
+      envelope = game.clientState.submit_local_action(action);
+    } catch (error) {
+      const report = cheatReportFromError(error, action.player);
+      if (report) {
+        cheatReportRef.current = report;
+        setCheatReport(report);
+      }
+      appendGameLog(formatPokerProtocolError(error, action.player), 'Game', 'error');
+      updateView({ force: true });
+      return null;
+    }
+
     const displayLines = botTraceLines(game, action, envelope.result, logLines);
     const wire = envelope.to_wire(displayLines);
     applyDebugCheatsToWire(wire, game);
@@ -934,7 +1017,7 @@ export function usePokerTable({
     appendTraceLines(displayLines, action.player);
     updateView();
     return wire;
-  }, [appendTraceLines, applyDebugCheatsToWire, publishWire, updateView]);
+  }, [appendGameLog, appendTraceLines, applyDebugCheatsToWire, publishWire, updateView]);
 
   const buildAutomaticAction = useCallback((game) => {
     const hand = game.clientState.current_hand();
@@ -1054,7 +1137,7 @@ export function usePokerTable({
       const built = buildAutomaticAction(game);
       if (!built) return null;
       const wire = submitAction(built.action, built.logLines);
-      if (built.action.type === 'SubmitPublicKey') {
+      if (wire && built.action.type === 'SubmitPublicKey') {
         game.shuffleTrace = null;
       }
       return wire;
@@ -1153,7 +1236,16 @@ export function usePokerTable({
       envelope = wire.to_envelope();
       appliedResult = game.clientState.apply_envelope_result(envelope);
     } catch (error) {
-      appendGameLog(error.message, senderForAddress(playerAddress), 'error');
+      const report = cheatReportFromError(error, wire?.action?.player);
+      if (report) {
+        cheatReportRef.current = report;
+        setCheatReport(report);
+      }
+      appendGameLog(
+        formatPokerProtocolError(error, wire?.action?.player),
+        senderForAddress(playerAddress),
+        'error',
+      );
       updateView({ force: true });
       return true;
     }
@@ -1239,6 +1331,21 @@ export function usePokerTable({
     }
   }, [ensureKeys, submitAction]);
 
+  const completeCheatCountdown = useCallback(() => {
+    const report = cheatReportRef.current;
+    if (!report) return false;
+    const playerIndex = gameRef.current?.clientState?.player_index;
+    setTerminalResult({
+      type: 'cheated',
+      cheat: {
+        ...report,
+        isViewerCheater: report.player === playerIndex,
+      },
+    });
+    updateView({ force: true });
+    return true;
+  }, [updateView]);
+
   useEffect(() => {
     if (networkSnapshot?.status !== 'connected') return;
     if (table?.currentSeat?.seatNo == null) return;
@@ -1298,17 +1405,27 @@ export function usePokerTable({
     ...snapshot,
     gameMessages,
     actionBarProps,
+    cheatReport,
     terminalResult,
-  }), [actionBarProps, gameMessages, snapshot, terminalResult]);
+  }), [actionBarProps, cheatReport, gameMessages, snapshot, terminalResult]);
 
   const pokerTableActions = useMemo(() => ({
     handleNetworkMessage,
     armPokerDebugCheat,
+    completeCheatCountdown,
     submitProtocolAction,
     submitBet,
     submitChat,
     startNextHand,
-  }), [armPokerDebugCheat, handleNetworkMessage, startNextHand, submitBet, submitChat, submitProtocolAction]);
+  }), [
+    armPokerDebugCheat,
+    completeCheatCountdown,
+    handleNetworkMessage,
+    startNextHand,
+    submitBet,
+    submitChat,
+    submitProtocolAction,
+  ]);
 
   return [pokerTableState, pokerTableActions];
 }

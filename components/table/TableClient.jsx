@@ -150,9 +150,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     publishMessage: table.publishMessage,
     prepareNetworkSession: table.prepareNetworkSession,
   });
-  const { getPlayerDisplayname } = useAccounts({
-    playerAddresses: table.currentSeat?.playerAddress ? [table.currentSeat.playerAddress] : [],
-  });
+  const playerAddresses = useMemo(() => (
+    table.tableData?.players?.map((player) => player.playerAddress).filter(Boolean) ?? []
+  ), [table.tableData?.players]);
+  const { getPlayerDisplayname } = useAccounts({ playerAddresses });
 
   const displayTable = useMemo(() => ({
     ...table,
@@ -192,6 +193,22 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         : '',
     };
   }, [getPlayerDisplayname, table.currentSeat?.playerAddress, table.currentSeat?.seatNo, table.seats]);
+  const terminalResult = useMemo(() => {
+    const result = pokerTableState.terminalResult;
+    if (result?.type !== 'cheated') return result;
+
+    const cheaterAddress = table.tableData?.players?.[result.cheat?.player]?.playerAddress;
+    const cheaterName = getPlayerDisplayname(cheaterAddress)
+      || (cheaterAddress ? cheaterAddress.slice(2, 4).toUpperCase() : 'Player');
+    const kind = result.cheat?.kind ?? 'CHEATING';
+    return {
+      ...result,
+      title: result.cheat?.isViewerCheater ? 'CHEATER' : 'GAME CHEATED',
+      subtitle: result.cheat?.isViewerCheater
+        ? `CHEATED ${kind}`
+        : `${cheaterName.toUpperCase()} CHEATED ${kind}`,
+    };
+  }, [getPlayerDisplayname, pokerTableState.terminalResult, table.tableData?.players]);
 
   useEffect(() => {
     if (!protocolActionState) return;
@@ -334,7 +351,11 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         : null}
       actionBarProps={pokerTableState.actionBarProps}
       gameState={currentGameState}
-      onNextHandCountdownComplete={pokerTableActions.startNextHand}
+      onNextHandCountdownComplete={
+        currentGameState?.cheat
+          ? pokerTableActions.completeCheatCountdown
+          : pokerTableActions.startNextHand
+      }
     >
       {!table.hasJoinedTable && buyInDialogReady && (
         <BuyInDialog
@@ -382,9 +403,9 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
         />
       )}
 
-      {pokerTableState.terminalResult && (
+      {terminalResult && (
         <TerminalResultDialog
-          result={pokerTableState.terminalResult}
+          result={terminalResult}
           onCloseTab={handleCloseTab}
         />
       )}

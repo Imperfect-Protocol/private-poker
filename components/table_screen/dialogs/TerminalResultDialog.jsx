@@ -3,6 +3,11 @@ import TableDialogOverlay from '@/components/dialog/TableDialogOverlay';
 
 export default function TerminalResultDialog({ result, onCloseTab }) {
   const won = result?.type === 'win';
+  const cheated = result?.type === 'cheated';
+  const title = cheated ? result?.title : won ? 'You Won' : 'You Lose';
+  const titleClass = cheated
+    ? result?.cheat?.isViewerCheater ? 'text-red-300' : 'text-purple-300'
+    : won ? 'text-emerald-300' : 'text-red-300';
 
   return (
     <TableDialogOverlay>
@@ -10,9 +15,14 @@ export default function TerminalResultDialog({ result, onCloseTab }) {
         <p className="text-teal-500 font-mono text-xs tracking-[0.3em] uppercase mb-1">
           Private Poker
         </p>
-        <h1 className={`text-4xl font-black tracking-widest uppercase italic ${won ? 'text-emerald-300' : 'text-red-300'}`}>
-          {won ? 'You Won' : 'You Lose'}
+        <h1 className={`text-4xl font-black tracking-widest uppercase italic ${titleClass}`}>
+          {title}
         </h1>
+        {cheated && result?.subtitle && (
+          <p className={`mt-3 font-mono text-sm font-black uppercase tracking-[0.22em] ${titleClass}`}>
+            {result.subtitle}
+          </p>
+        )}
       </div>
 
       <div className="p-6 flex flex-col gap-5">
