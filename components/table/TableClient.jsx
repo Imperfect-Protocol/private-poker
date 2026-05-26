@@ -38,17 +38,17 @@ const ensureHexPrefix = (value) => {
 const rtcMessageLabels = (message) => {
   if (!message?.type) return ['Unknown RTC Message'];
   if (message.type === 'ChatMessage') return [message.text ?? 'Chat Message'];
-  if (message.type === 'SyncSequence') {
-    const sequenceNumbers = message.sequence_numbers ?? message.seen_sequences ?? [];
-    return [
-      `SyncSequence from Player ${Number(message.from ?? 0) + 1} [${sequenceNumbers.join(', ')}]`,
-    ];
-  }
-  if (message.type === 'POKER_ACTION' || message.type === 'POKER_GAME_MESSAGE') {
+  if (message.type === 'History') {
     if (message.wire?.log_lines?.length > 0) {
       return message.wire.log_lines;
     }
-    return [submitConsoleLine(message.wire?.submit) ?? 'Poker Action'];
+    const lastHistoryEntry = Array.isArray(message.hand_history)
+      ? message.hand_history.at(-1)
+      : null;
+    if (lastHistoryEntry?.wire?.log_lines?.length > 0) {
+      return lastHistoryEntry.wire.log_lines;
+    }
+    return [submitConsoleLine(lastHistoryEntry?.wire?.submit ?? message.wire?.submit) ?? 'History'];
   }
   return [message.type];
 };
@@ -114,9 +114,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
     const messageLabels = rtcMessageLabels(incoming);
 
     if (
-      incoming?.type === 'POKER_ACTION'
-      || incoming?.type === 'POKER_GAME_MESSAGE'
-      || incoming?.type === 'SyncSequence'
+      incoming?.type === 'History'
       || incoming?.type === 'ChatMessage'
     ) {
       pokerTableRef.current?.handleNetworkMessage(incoming, playerAddress);

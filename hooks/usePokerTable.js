@@ -7,6 +7,7 @@ import {
   make_public_key_from_signing_key,
   make_signature_from_compressed_slice,
   make_signing_key_from_seed,
+  mask as blsMask,
   sign as blsSign,
   verify as blsVerify,
 } from '@/lib/crum_bls';
@@ -30,9 +31,7 @@ import {
 } from '@/lib/crum_pkr';
 import { holdemShowdown } from '@/lib/crum_pkr/hand_evaluator';
 
-const POKER_ACTION_MESSAGE = 'POKER_ACTION';
-const POKER_GAME_MESSAGE = 'POKER_GAME_MESSAGE';
-const SYNC_SEQUENCE_MESSAGE = 'SyncSequence';
+const HISTORY_MESSAGE = 'History';
 const CHAT_MESSAGE = 'ChatMessage';
 const ACTION_SIGNATURE_SCHEME = 'BLS12-381-G1-PK-G2-SIG';
 const BETTING_UI_STATES = new Set(['PreFlop', 'Flop', 'Turn', 'River']);
@@ -321,49 +320,24 @@ function tableSequenceNumber(game) {
   return Number(game?.clientState?.table?.sequence_number ?? 0);
 }
 
-function playerCount(game, fallback = 0) {
-  return Number(
-    game?.clientState?.table?.get_current_player_count?.()
-      ?? game?.clientState?.table?.get_max_players?.()
-      ?? fallback
-      ?? 0,
+function handHistorySequenceNumber(historyEntries = []) {
+  return Math.max(
+    0,
+    ...historyEntries.map((entry) => Number(entry?.sequence_number ?? entry?.wire?.sequence_number ?? 0)),
   );
 }
 
-function emptySeenSequences(count) {
-  return Array(Math.max(Number(count ?? 0), 0)).fill(0);
-}
-
-function normalizeSeenSequences(seenSequences, count) {
-  const normalized = emptySeenSequences(count);
-  (seenSequences ?? []).forEach((sequence, index) => {
-    if (index < normalized.length) normalized[index] = Number(sequence ?? 0);
-  });
-  return normalized;
-}
-
-function historySequenceNumbers(message, count) {
-  return normalizeSeenSequences(
-    message?.sequence_numbers ?? message?.seen_sequences,
-    count,
-  );
-}
-
-function formatSequenceNumbers(sequences) {
-  return `[${(sequences ?? []).join(', ')}]`;
-}
-
-function highestSequenceSeat(seenSequences) {
-  let highestSeat = 0;
-  let highestSequence = -1;
-  seenSequences.forEach((sequence, seat) => {
-    const numericSequence = Number(sequence ?? 0);
-    if (numericSequence > highestSequence) {
-      highestSequence = numericSequence;
-      highestSeat = seat;
-    }
-  });
-  return { highestSeat, highestSequence };
+function handHistoryTipKey({ tableId, handId, historyEntries = [] } = {}) {
+  const orderedEntries = [...historyEntries]
+    .sort((left, right) => Number(left.sequence_number ?? 0) - Number(right.sequence_number ?? 0));
+  const lastEntry = orderedEntries.at(-1);
+  return [
+    tableId ?? '',
+    handId ?? '',
+    handHistorySequenceNumber(orderedEntries),
+    orderedEntries.length,
+    wireHistoryKey(lastEntry?.wire),
+  ].join(':');
 }
 
 function makePokerTable(numPlayers) {
@@ -732,6 +706,42 @@ function currentActingPlayer(game) {
   return hand?.get_current_state().get_current_player() ?? null;
 }
 
+function pointKey(point) {
+  return bytesToHex(point.toRawBytes(true), { prefix: true });
+}
+
+function reconstructShuffleTrace(hand, playerIndex, signingKey) {
+  const numPlayers = Number(hand?.current_state?.num_players ?? 0);
+  const dealerButton = Number(hand?.current_state?.dealer_button ?? 0);
+  if (!hand || playerIndex == null || !signingKey || numPlayers <= 0) return null;
+
+  const stepIndex = (Number(playerIndex) + numPlayers - dealerButton) % numPlayers;
+  const nextDeck = hand.shuffle_history?.[stepIndex]?.cards?.();
+  if (!Array.isArray(nextDeck)) return null;
+  const prevDeck = stepIndex === 0
+    ? hand.get_poker_deck().cards()
+    : hand.shuffle_history?.[stepIndex - 1]?.cards?.();
+  if (!Array.isArray(prevDeck)) return null;
+
+  const beforeIndexByMaskedCard = new Map();
+  prevDeck.forEach((card, beforeIndex) => {
+    beforeIndexByMaskedCard.set(pointKey(blsMask(card, signingKey)), beforeIndex);
+  });
+
+  const traces = [];
+  const usedBeforeIndices = new Set();
+  for (let afterIndex = 0; afterIndex < nextDeck.length; afterIndex += 1) {
+    const beforeIndex = beforeIndexByMaskedCard.get(pointKey(nextDeck[afterIndex]));
+    if (beforeIndex == null || usedBeforeIndices.has(beforeIndex)) return null;
+    usedBeforeIndices.add(beforeIndex);
+    traces.push({
+      after_index: afterIndex,
+      claimed_before_index: beforeIndex,
+    });
+  }
+  return traces;
+}
+
 function isHumanActionState(handState) {
   return [
     POKER_HAND_STATE_BET,
@@ -900,8 +910,9 @@ export function usePokerTable({
   const lastPatchRef = useRef(null);
   const lastSnapshotRef = useRef(snapshot);
   const handHistoryRef = useRef([]);
-  const knownSeenSequencesRef = useRef([]);
+  const seenHistoryTipsRef = useRef(new Set());
   const previousConnectedRef = useRef(false);
+  const pendingHistorySyncRef = useRef(false);
   const protocolActionInFlightRef = useRef(null);
   const debugCheatsRef = useRef({
     badPk: false,
@@ -969,8 +980,9 @@ export function usePokerTable({
   useEffect(() => {
     resetGame();
     handHistoryRef.current = [];
-    knownSeenSequencesRef.current = emptySeenSequences(tableMaxSeats);
+    seenHistoryTipsRef.current = new Set();
     previousConnectedRef.current = false;
+    pendingHistorySyncRef.current = false;
     cheatReportRef.current = null;
     setCheatReport(null);
     setTerminalResult(null);
@@ -1085,40 +1097,34 @@ export function usePokerTable({
     if (historyEntry) rememberHistoryEntry(historyEntry);
   }, [rememberHistoryEntry, signWireHistoryEntry]);
 
-  const noteSeenSequence = useCallback((seatNo, sequenceNumber) => {
-    if (seatNo == null || seatNo < 0) return;
-    const count = Number(tableMaxSeats || playerCount(gameRef.current));
-    const seenSequences = normalizeSeenSequences(knownSeenSequencesRef.current, count);
-    seenSequences[seatNo] = Math.max(Number(seenSequences[seatNo] ?? 0), Number(sequenceNumber ?? 0));
-    knownSeenSequencesRef.current = seenSequences;
-  }, [tableMaxSeats]);
-
-  const publishWire = useCallback((wire) => {
+  const publishWire = useCallback((wire, { sync = false } = {}) => {
     const game = gameRef.current;
     const entry = signWireHistoryEntry(wire, game);
     if (entry) rememberHistoryEntry(entry);
-    const count = Number(tableMaxSeats || playerCount(game));
-    const sequenceNumbers = normalizeSeenSequences(knownSeenSequencesRef.current, count);
-    if (currentSeatNo != null) sequenceNumbers[currentSeatNo] = tableSequenceNumber(game);
+    const handHistory = [...(handHistoryRef.current ?? [])];
+    const latestHandHistorySequence = Math.max(
+      tableSequenceNumber(game),
+      handHistorySequenceNumber(handHistory),
+      Number(wire.sequence_number ?? 0),
+    );
+    if (wire.nop) {
+      wire.sequence_number = latestHandHistorySequence;
+    }
     const message = {
-      type: POKER_GAME_MESSAGE,
+      type: HISTORY_MESSAGE,
       table_id: wire.table_id,
       hand_id: wire.hand_id,
       timestamp: Date.now(),
-      sequence_number: wire.sequence_number ?? null,
-      sequence_numbers: sequenceNumbers,
-      hand_history: [...(handHistoryRef.current ?? [])],
+      sync,
+      sequence_number: latestHandHistorySequence,
+      hand_history: handHistory,
       wire: encodeWire(wire),
     };
     publishMessage(message);
-    noteSeenSequence(wire.from, wire.sequence_number);
   }, [
-    currentSeatNo,
-    noteSeenSequence,
     publishMessage,
     rememberHistoryEntry,
     signWireHistoryEntry,
-    tableMaxSeats,
   ]);
 
   const applyDebugCheatsToWire = useCallback((wire, game) => {
@@ -1174,13 +1180,13 @@ export function usePokerTable({
     }
   }, []);
 
-  const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game)) => {
+  const submitNop = useCallback((game, currentPlayer = currentActingPlayer(game), { sync = false } = {}) => {
     if (!game || currentPlayer == null) return null;
     const wire = game.clientState.submit_nop({
       current_player: currentPlayer,
       reason: 'hand history forwarded',
     });
-    publishWire(wire);
+    publishWire(wire, { sync });
     return wire;
   }, [publishWire]);
 
@@ -1262,8 +1268,10 @@ export function usePokerTable({
         };
       }
       case 'SubmitPublicKey': {
-        if (!game.shuffleTrace) return null;
-        const traces = game.shuffleTrace;
+        const traces = game.shuffleTrace
+          ?? reconstructShuffleTrace(hand, playerIndex, game.signingKey);
+        if (!traces) return null;
+        game.shuffleTrace = traces;
         return {
           action: PokerAction.SubmitPublicKey({
             player: playerIndex,
@@ -1375,7 +1383,7 @@ export function usePokerTable({
     game.shuffleTrace = null;
     game.seenFinished = false;
     handHistoryRef.current = [];
-    knownSeenSequencesRef.current = emptySeenSequences(game.clientState.table.get_current_player_count());
+    seenHistoryTipsRef.current = new Set();
     protocolActionInFlightRef.current = null;
 
     const events = game.clientState.table.drain_events?.() ?? [];
@@ -1400,11 +1408,12 @@ export function usePokerTable({
       }
 
       const wire = decodeWire(entry.wire);
-      rememberWire(wire, entry);
-      noteSeenSequence(wire.from, wire.sequence_number);
 
       const entrySequence = Number(entry.sequence_number ?? entry.wire?.sequence_number ?? 0);
-      if (entrySequence <= tableSequenceNumber(game)) continue;
+      if (entrySequence <= tableSequenceNumber(game)) {
+        rememberWire(wire, entry);
+        continue;
+      }
 
       while (wire.hand_id > game.clientState.hand_id) {
         if (!startNextHand()) return true;
@@ -1414,7 +1423,6 @@ export function usePokerTable({
       if (wire.nop) {
         if (game.clientState.apply_nop_wire(wire)) {
           rememberWire(wire, entry);
-          noteSeenSequence(wire.from, wire.sequence_number);
         }
         continue;
       }
@@ -1437,11 +1445,26 @@ export function usePokerTable({
       const { applied, result } = appliedResult;
       if (applied) {
         rememberWire(wire, entry);
-        noteSeenSequence(wire.from, wire.sequence_number);
         const displayLines = wire.log_lines?.length > 0
           ? wire.log_lines
           : eventDisplayLines(result?.events);
         latestAppliedAction = { displayLines, from: envelope.from };
+      } else {
+        console.warn('[Poker history] newer entry not applied', {
+          entrySequence,
+          tableSequence: tableSequenceNumber(game),
+          from: wire.from,
+          sequence: wire.sequence,
+          expectedState: wire.expected_state,
+          result: appliedResult,
+          wire: entry.wire,
+        });
+        const reason = appliedResult?.mismatch
+          ? `state mismatch local=${JSON.stringify(appliedResult.mismatch.local)} expected=${JSON.stringify(appliedResult.mismatch.remote_expected)}`
+          : 'duplicate or rejected';
+        appendGameLog(`History action ${entrySequence} not applied: ${reason}`, senderForAddress(playerAddress), 'error');
+        updateView({ force: true });
+        return false;
       }
     }
 
@@ -1453,7 +1476,6 @@ export function usePokerTable({
   }, [
     appendGameLog,
     appendTraceLines,
-    noteSeenSequence,
     rememberWire,
     resetGame,
     senderForAddress,
@@ -1462,7 +1484,7 @@ export function usePokerTable({
     verifyHistoryEntrySignature,
   ]);
 
-  const continueAfterPokerMessage = useCallback(async () => {
+  const continueAfterPokerMessage = useCallback(async ({ sync = false } = {}) => {
     const game = gameRef.current;
     const hand = game?.clientState.current_hand();
     const handState = hand?.get_current_state();
@@ -1472,9 +1494,24 @@ export function usePokerTable({
     }
 
     if (handState.get_current_player() !== game.clientState.player_index) {
-      submitNop(game, handState.get_current_player());
+      submitNop(game, handState.get_current_player(), { sync });
       updateView({ force: true });
       return true;
+    }
+
+    const tipKey = handHistoryTipKey({
+      tableId: game.clientState.table_id,
+      handId: game.clientState.hand_id,
+      historyEntries: handHistoryRef.current,
+    });
+    if (sync && !seenHistoryTipsRef.current.has(tipKey)) {
+      seenHistoryTipsRef.current.add(tipKey);
+      submitNop(game, handState.get_current_player(), { sync: true });
+      updateView({ force: true });
+      return true;
+    }
+    if (sync) {
+      seenHistoryTipsRef.current.delete(tipKey);
     }
 
     if (!isHumanActionState(handState)) {
@@ -1486,116 +1523,23 @@ export function usePokerTable({
     return true;
   }, [submitNop, submitProtocolAction, updateView]);
 
-  const sendSyncSequence = useCallback(() => {
+  const sendHistorySync = useCallback(() => {
     const game = gameRef.current ?? resetGame();
-    if (!game || currentSeatNo == null) return false;
-    const count = playerCount(game, tableMaxSeats);
-    const seenSequences = emptySeenSequences(count);
-    seenSequences[currentSeatNo] = tableSequenceNumber(game);
-    publishMessage({
-      type: SYNC_SEQUENCE_MESSAGE,
-      table_id: game.clientState.table_id,
-      hand_id: game.clientState.hand_id,
-      timestamp: Date.now(),
-      origin_seat: 0,
-      from: currentSeatNo,
-      hops: 1,
-      sequence_numbers: seenSequences,
-    });
-    appendGameLog(`SyncSequence sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
+    if (!game) return false;
+    submitNop(game, currentActingPlayer(game), { sync: true });
+    appendGameLog('History sync sent', 'Game');
     return true;
-  }, [appendGameLog, currentSeatNo, publishMessage, resetGame, tableMaxSeats]);
-
-  const handleSyncSequence = useCallback((message, playerAddress = null) => {
-    const game = gameRef.current ?? resetGame();
-    if (!game || currentSeatNo == null) return true;
-    if (message?.table_id !== game.clientState.table_id || message?.hand_id !== game.clientState.hand_id) {
-      return true;
-    }
-
-    const count = playerCount(game, tableMaxSeats);
-    const seenSequences = historySequenceNumbers(message, count);
-    if (message.phase !== 'result') {
-      seenSequences[currentSeatNo] = tableSequenceNumber(game);
-    }
-    knownSeenSequencesRef.current = seenSequences;
-    appendGameLog(`SyncSequence received ${formatSequenceNumbers(seenSequences)}`, senderForAddress(playerAddress));
-
-    if (message.phase === 'result') {
-      if (currentSeatNo === Number(message.highest_seat ?? -1)) {
-        return continueAfterPokerMessage();
-      }
-
-      if (currentSeatNo === Number(message.origin_seat ?? -1) && Number(message.hops ?? 0) >= Math.max(count, 1)) {
-        return true;
-      }
-
-      publishMessage({
-        ...message,
-        from: currentSeatNo,
-        hops: Number(message.hops ?? 0) + 1,
-        sequence_numbers: seenSequences,
-        seen_sequences: undefined,
-      });
-      appendGameLog(`SyncSequence result sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
-      return true;
-    }
-
-    if (currentSeatNo === 0 && Number(message.hops ?? 0) >= Math.max(count, 1)) {
-      const { highestSeat } = highestSequenceSeat(seenSequences);
-      publishMessage({
-        type: SYNC_SEQUENCE_MESSAGE,
-        table_id: game.clientState.table_id,
-        hand_id: game.clientState.hand_id,
-        timestamp: Date.now(),
-        phase: 'result',
-        origin_seat: 0,
-        from: currentSeatNo,
-        hops: 1,
-        highest_seat: highestSeat,
-        sequence_numbers: seenSequences,
-      });
-      appendGameLog(`SyncSequence result sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
-      if (highestSeat === currentSeatNo) {
-        return continueAfterPokerMessage();
-      }
-      return true;
-    }
-
-    publishMessage({
-      ...message,
-      from: currentSeatNo,
-      hops: Number(message.hops ?? 0) + 1,
-      sequence_numbers: seenSequences,
-      seen_sequences: undefined,
-    });
-    appendGameLog(`SyncSequence sent ${formatSequenceNumbers(seenSequences)}`, 'Game');
-    return true;
-  }, [
-    appendGameLog,
-    continueAfterPokerMessage,
-    currentSeatNo,
-    publishMessage,
-    resetGame,
-    senderForAddress,
-    tableMaxSeats,
-  ]);
+  }, [appendGameLog, resetGame, submitNop]);
 
   const handleNetworkMessage = useCallback(async (message, playerAddress = null) => {
     if (
-      message?.type !== POKER_ACTION_MESSAGE
-      && message?.type !== POKER_GAME_MESSAGE
-      && message?.type !== SYNC_SEQUENCE_MESSAGE
+      message?.type !== HISTORY_MESSAGE
       && message?.type !== CHAT_MESSAGE
     ) return false;
 
     if (message.type === CHAT_MESSAGE) {
       appendGameLog(message.text ?? '', senderForAddress(playerAddress));
       return true;
-    }
-
-    if (message.type === SYNC_SEQUENCE_MESSAGE) {
-      return handleSyncSequence(message, playerAddress);
     }
 
     const game = gameRef.current ?? resetGame();
@@ -1607,10 +1551,6 @@ export function usePokerTable({
     if (handHistory.length > 0) {
       const appliedHistory = await applyHistoryEntries(handHistory, playerAddress);
       if (!appliedHistory) return true;
-      knownSeenSequencesRef.current = historySequenceNumbers(
-        message,
-        playerCount(game, tableMaxSeats),
-      );
     }
 
     const wire = decodeWire(message.wire);
@@ -1620,15 +1560,14 @@ export function usePokerTable({
 
     if (wire.nop) {
       game.clientState.apply_nop_wire(wire);
-      noteSeenSequence(wire.from, wire.sequence_number);
-      return continueAfterPokerMessage();
+      return continueAfterPokerMessage({ sync: message.sync === true });
     }
 
     const wireAlreadyInHistory = handHistory.some((entry) => (
       wireHistoryKey(entry?.wire) === wireHistoryKey(encodeWire(wire))
     ));
     if (wireAlreadyInHistory) {
-      return continueAfterPokerMessage();
+      return continueAfterPokerMessage({ sync: message.sync === true });
     }
 
     let envelope;
@@ -1653,7 +1592,6 @@ export function usePokerTable({
 
     const { applied, result } = appliedResult;
     if (applied) {
-      noteSeenSequence(wire.from, wire.sequence_number);
       const displayLines = wire.log_lines?.length > 0
         ? wire.log_lines
         : eventDisplayLines(result?.events);
@@ -1665,7 +1603,7 @@ export function usePokerTable({
         return true;
       }
 
-      return continueAfterPokerMessage();
+      return continueAfterPokerMessage({ sync: message.sync === true });
     }
     return true;
   }, [
@@ -1673,12 +1611,9 @@ export function usePokerTable({
     appendTraceLines,
     applyHistoryEntries,
     continueAfterPokerMessage,
-    handleSyncSequence,
-    noteSeenSequence,
     resetGame,
     senderForAddress,
     startNextHand,
-    tableMaxSeats,
     updateView,
   ]);
 
@@ -1753,16 +1688,30 @@ export function usePokerTable({
     const wasConnected = previousConnectedRef.current;
     previousConnectedRef.current = connected;
 
-    if (!connected || wasConnected || currentSeatNo !== 0) return;
+    if (!connected) {
+      if (wasConnected) pendingHistorySyncRef.current = true;
+      return;
+    }
+
+    if (wasConnected) return;
+
     ensureKeys().then(() => {
-      sendSyncSequence();
+      if (pendingHistorySyncRef.current) {
+        pendingHistorySyncRef.current = false;
+        sendHistorySync();
+        return;
+      }
+      if (currentSeatNo === 0) {
+        continueAfterPokerMessage();
+      }
     });
   }, [
+    continueAfterPokerMessage,
     currentSeatNo,
     ensureKeys,
     networkSnapshot?.inboundState,
     networkSnapshot?.outboundState,
-    sendSyncSequence,
+    sendHistorySync,
   ]);
 
   const actionBarProps = useMemo(() => {
