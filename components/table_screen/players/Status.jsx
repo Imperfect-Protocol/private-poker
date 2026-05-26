@@ -1,5 +1,8 @@
 import { Coins } from 'lucide-react';
 
+const MAX_STACK = 1000;
+const METER_SEGMENTS = 12;
+
 export default function Status({
   isEmptySeat,
   isMe = false,
@@ -12,7 +15,7 @@ export default function Status({
 
   if (networkState === 'connected') {
     return (
-      <ChipAmount amount={chipStack ?? 0} isMe={isMe} />
+      <ChipStack amount={chipStack ?? 0} isMe={isMe} />
     );
   }
 
@@ -23,7 +26,7 @@ export default function Status({
           Seating...
         </p>
         {chipStack != null && (
-          <ChipAmount amount={chipStack} isMe={isMe} />
+          <ChipStack amount={chipStack} isMe={isMe} />
         )}
       </>
     );
@@ -36,7 +39,7 @@ export default function Status({
           Disconnected
         </p>
         {chipStack != null && (
-          <ChipAmount amount={chipStack} isMe={isMe} />
+          <ChipStack amount={chipStack} isMe={isMe} />
         )}
       </>
     );
@@ -46,8 +49,17 @@ export default function Status({
     <>
       <p className="text-xs font-mono text-slate-500 font-black">Sitting Out</p>
       {chipStack != null && (
-        <ChipAmount amount={chipStack} isMe={isMe} />
+        <ChipStack amount={chipStack} isMe={isMe} />
       )}
+    </>
+  );
+}
+
+function ChipStack({ amount, isMe = false }) {
+  return (
+    <>
+      <ChipAmount amount={amount} isMe={isMe} />
+      <LifeMeter amount={amount} isMe={isMe} />
     </>
   );
 }
@@ -58,5 +70,26 @@ function ChipAmount({ amount, isMe = false }) {
       <Coins size={isMe ? 17 : 15} className="text-yellow-200 drop-shadow-[0_0_8px_rgba(250,204,21,0.35)]" />
       <span>{amount}</span>
     </p>
+  );
+}
+
+function LifeMeter({ amount, isMe = false }) {
+  const ratio = Math.max(0, Math.min(Number(amount ?? 0) / MAX_STACK, 1));
+  const filledSegments = Math.ceil(ratio * METER_SEGMENTS);
+  const fillClass = ratio > 0.66
+    ? 'bg-yellow-300 shadow-[0_0_7px_rgba(250,204,21,0.75)]'
+    : ratio > 0.33
+      ? 'bg-orange-400 shadow-[0_0_7px_rgba(251,146,60,0.72)]'
+      : 'bg-red-500 shadow-[0_0_7px_rgba(239,68,68,0.74)]';
+
+  return (
+    <div className={`mx-auto mt-1 grid ${isMe ? 'w-[6.25rem]' : 'w-[5.75rem]'} grid-cols-12 gap-0.5`}>
+      {Array.from({ length: METER_SEGMENTS }, (_, index) => (
+        <div
+          key={index}
+          className={`h-1.5 rounded-[1px] border border-slate-950/60 ${index < filledSegments ? fillClass : 'bg-slate-800/85'}`}
+        />
+      ))}
+    </div>
   );
 }

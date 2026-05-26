@@ -21,7 +21,7 @@ export default function Avatar({
   const borderClass = isEmptySeat
     ? 'border-dashed border-[#303948]/70 shadow-none'
     : isWinner
-      ? 'border-emerald-300 shadow-[0_0_26px_rgba(110,231,183,0.75)] animate-pulse'
+      ? 'border-4 border-yellow-200 shadow-[0_0_30px_rgba(250,204,21,0.85),0_0_14px_rgba(255,237,213,0.72),inset_0_0_18px_rgba(250,204,21,0.2)]'
       : isTheirTurn
         ? 'border-amber-300 shadow-[0_0_30px_rgba(245,158,11,0.68),0_0_12px_rgba(251,191,36,0.45),inset_0_0_18px_rgba(245,158,11,0.18)]'
         : isMe
