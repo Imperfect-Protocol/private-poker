@@ -5,11 +5,9 @@ import { useAppKit } from '@reown/appkit/react';
 import { useConnection, useSignTypedData } from 'wagmi';
 import {
   ACCOUNT_SESSION_CHANNEL,
-  ACCOUNT_SESSION_STORAGE_KEY,
   buildAccountSessionTypedData,
   deriveAccountSession,
   parseAccountSession,
-  serializeAccountSession,
 } from '@/lib/accountSession';
 
 const AccountSessionContext = createContext(null);
@@ -21,22 +19,18 @@ export function AccountSessionProvider({ children }) {
   const { open } = useAppKit();
   const { mutateAsync: signTypedDataAsync, isPending } = useSignTypedData();
   const [accountSession, setAccountSession] = useState(null);
+  const accountSessionRef = useRef(null);
   const channelRef = useRef(null);
   const pendingRequestsRef = useRef(new Map());
 
   const saveSession = useCallback((session) => {
+    accountSessionRef.current = session;
     setAccountSession(session);
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem(ACCOUNT_SESSION_STORAGE_KEY, serializeAccountSession(session));
-      channelRef.current?.postMessage({ type: 'ACCOUNT_SESSION_READY', session });
-    }
+    channelRef.current?.postMessage({ type: 'ACCOUNT_SESSION_READY', session });
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-
-    const storedSession = parseAccountSession(window.sessionStorage.getItem(ACCOUNT_SESSION_STORAGE_KEY));
-    if (storedSession) setAccountSession(storedSession);
 
     const channel = new BroadcastChannel(ACCOUNT_SESSION_CHANNEL);
     channelRef.current = channel;
@@ -46,7 +40,7 @@ export function AccountSessionProvider({ children }) {
       if (!message?.type) return;
 
       if (message.type === 'REQUEST_ACCOUNT_SESSION') {
-        const currentSession = parseAccountSession(window.sessionStorage.getItem(ACCOUNT_SESSION_STORAGE_KEY));
+        const currentSession = parseAccountSession(accountSessionRef.current);
         if (currentSession) {
           channel.postMessage({
             type: 'ACCOUNT_SESSION',
@@ -66,8 +60,8 @@ export function AccountSessionProvider({ children }) {
           pendingRequestsRef.current.delete(message.requestId);
         }
 
+        accountSessionRef.current = session;
         setAccountSession(session);
-        window.sessionStorage.setItem(ACCOUNT_SESSION_STORAGE_KEY, serializeAccountSession(session));
       }
     };
 
@@ -81,15 +75,15 @@ export function AccountSessionProvider({ children }) {
     if (!address || !accountSession?.walletAddress) return;
     if (normalizeAddress(address) === normalizeAddress(accountSession.walletAddress)) return;
 
-    setAccountSession(null);
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem(ACCOUNT_SESSION_STORAGE_KEY);
-    }
+    accountSessionRef.current = null;
+    queueMicrotask(() => {
+      setAccountSession(null);
+    });
   }, [accountSession?.walletAddress, address]);
 
   const requestSessionFromTabs = useCallback(() => {
     if (typeof window === 'undefined') return Promise.resolve(null);
-    const currentSession = parseAccountSession(window.sessionStorage.getItem(ACCOUNT_SESSION_STORAGE_KEY));
+    const currentSession = parseAccountSession(accountSessionRef.current);
     if (currentSession) {
       setAccountSession(currentSession);
       return Promise.resolve(currentSession);

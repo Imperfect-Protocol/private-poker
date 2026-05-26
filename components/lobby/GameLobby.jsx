@@ -102,34 +102,50 @@ export default function GameLobby({ tables = [], lobbyId, userTables = [] }) {
   return (
     <div className="flex flex-col gap-8 w-full">
       {waitingPeer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
-          <div className="w-[min(420px,calc(100vw-32px))] rounded-xl border border-yellow-300/50 bg-slate-950 p-6 text-center shadow-[0_0_45px_rgba(250,204,21,0.24)]">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-yellow-300">
-              Table Waiting
-            </p>
-            <h2 className="mt-3 text-2xl font-black uppercase tracking-tight text-slate-50">
-              Hey, {formatSeat(waitingPeer.from)} is waiting for you!
-            </h2>
-            <p className="mt-3 font-mono text-xs text-slate-300">
-              Open the table tab so the peer connection can finish.
-            </p>
-            <div className="mt-6 flex items-center justify-center gap-3">
-              <a
-                href={`/tables/${waitingPeer.tableId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setWaitingPeer(null)}
-                className="cursor-pointer rounded-lg bg-yellow-300 px-5 py-2 text-xs font-black uppercase tracking-widest text-slate-950 transition-colors hover:bg-yellow-200"
-              >
-                Open Table
-              </a>
-              <button
-                type="button"
-                onClick={() => setWaitingPeer(null)}
-                className="cursor-pointer rounded-lg border border-slate-600 px-5 py-2 text-xs font-black uppercase tracking-widest text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
-              >
-                Later
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-6 py-10 backdrop-blur-sm">
+          <div className="w-[min(520px,100%)] rounded-2xl border border-yellow-300/45 bg-slate-950 p-2 shadow-[0_0_60px_rgba(250,204,21,0.22)]">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-7 py-8 text-center sm:px-9 sm:py-9">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-yellow-300/50 bg-yellow-300/10 shadow-[0_0_24px_rgba(250,204,21,0.18)]">
+                <span className="relative flex h-3 w-3">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-300 opacity-75" />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-yellow-200" />
+                </span>
+              </div>
+
+              <p className="mt-5 text-[10px] font-black uppercase tracking-[0.32em] text-yellow-300">
+                Connection Request
+              </p>
+              <h2 className="mt-3 text-2xl font-black uppercase leading-tight tracking-tight text-slate-50 sm:text-3xl">
+                {formatSeat(waitingPeer.from)} is waiting for you
+              </h2>
+
+              <div className="mx-auto mt-5 max-w-sm rounded-lg border border-slate-700/80 bg-slate-950/80 px-5 py-4">
+                <p className="font-mono text-xs leading-6 text-slate-300">
+                  Their lobby can reach you over the silent RTC pool, but this table needs your tab open before the poker channel can complete.
+                </p>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                  Table {waitingPeer.tableId}
+                </p>
+              </div>
+
+              <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:flex-row">
+                <a
+                  href={`/tables/${waitingPeer.tableId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setWaitingPeer(null)}
+                  className="cursor-pointer rounded-lg bg-yellow-300 px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-950 transition-colors hover:bg-yellow-200"
+                >
+                  Open Table
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setWaitingPeer(null)}
+                  className="cursor-pointer rounded-lg border border-slate-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
+                >
+                  Later
+                </button>
+              </div>
             </div>
           </div>
         </div>

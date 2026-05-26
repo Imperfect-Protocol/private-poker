@@ -6,12 +6,10 @@ import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 import {
   EMPTY_ACCOUNT_PROFILE,
   buildAccountProfileBlob,
-  loadStoredAccountProfileBlob,
   profileHasRequiredFields,
   profileNeedsEdit,
   readAccountProfilePublicBlob,
   readAccountProfileBlob,
-  saveStoredAccountProfileBlob,
 } from '@/lib/accountProfile';
 import { buildAccountSessionTypedData } from '@/lib/accountSession';
 import { PRIVATE_POKER_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS } from '@/lib/chain';
@@ -76,6 +74,7 @@ export function useAccounts({ playerAddresses = [] } = {}) {
   const [profileMode, setProfileMode] = useState('edit');
   const [profile, setProfile] = useState(EMPTY_ACCOUNT_PROFILE);
   const [profileBlob, setProfileBlob] = useState('');
+  const [hasOnchainAccount, setHasOnchainAccount] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSubscriptionActive, setIsSubscriptionActive] = useState(false);
   const [playerDisplaynames, setPlayerDisplaynames] = useState({});
@@ -115,27 +114,34 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     await publicPokerClient.waitForTransactionReceipt({ hash: updateHash });
   }, [accountSession, createOperatorAddress]);
 
+  const loadAccountFromChain = useCallback(async (walletAddress, session) => {
+    if (!isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
+      return { exists: false, profileRecord: null, account: null };
+    }
+
+    const blob = await publicPokerClient.readContract({
+      address: PRIVATE_POKER_CONTRACT_ADDRESS,
+      abi: ACCOUNT_ABI,
+      functionName: 'getAccount',
+      args: [walletAddress],
+    });
+    const account = decodeAccountBlob(blob);
+    const profileRecord = await readAccountProfileBlob(account.encryptedProfile, session);
+    return { exists: true, profileRecord, account };
+  }, []);
+
   useEffect(() => {
     if (!accountSession?.walletAddress) return undefined;
 
     let isMounted = true;
     const loadAccount = async () => {
       setIsCheckingAccount(true);
-      const storedProfile = await readAccountProfileBlob(
-        loadStoredAccountProfileBlob(accountSession.walletAddress),
-        accountSession,
-      ).catch((err) => {
-        console.error('Account profile load failed:', err);
-        return null;
-      });
-      if (!isMounted) return;
-
-      setProfile(storedProfile?.profile ?? EMPTY_ACCOUNT_PROFILE);
-      setProfileBlob(storedProfile?.blobHex ?? '');
-      setProfileMode(profileNeedsEdit(storedProfile) ? 'edit' : 'view');
-
       if (!isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
         if (isMounted) {
+          setHasOnchainAccount(false);
+          setProfile(EMPTY_ACCOUNT_PROFILE);
+          setProfileBlob('');
+          setProfileMode('edit');
           setIsSubscriptionActive(false);
           setStep('profile');
           setIsCheckingAccount(false);
@@ -144,6 +150,10 @@ export function useAccounts({ playerAddresses = [] } = {}) {
       }
 
       try {
+        const { exists, profileRecord } = await loadAccountFromChain(
+          accountSession.walletAddress,
+          accountSession,
+        );
         const isActive = await publicPokerClient.readContract({
           address: PRIVATE_POKER_CONTRACT_ADDRESS,
           abi: ACCOUNT_ABI,
@@ -152,11 +162,19 @@ export function useAccounts({ playerAddresses = [] } = {}) {
         });
         if (!isMounted) return;
 
+        setHasOnchainAccount(exists);
+        setProfile(profileRecord?.profile ?? EMPTY_ACCOUNT_PROFILE);
+        setProfileBlob(profileRecord?.blobHex ?? '');
+        setProfileMode(profileNeedsEdit(profileRecord) ? 'edit' : 'view');
         setIsSubscriptionActive(Boolean(isActive));
         setStep('profile');
       } catch (err) {
-        console.error('Account subscription check failed:', err);
+        console.debug('Account chain load failed:', err);
         if (isMounted) {
+          setHasOnchainAccount(false);
+          setProfile(EMPTY_ACCOUNT_PROFILE);
+          setProfileBlob('');
+          setProfileMode('edit');
           setIsSubscriptionActive(false);
           setStep('profile');
         }
@@ -169,7 +187,7 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     return () => {
       isMounted = false;
     };
-  }, [accountSession]);
+  }, [accountSession, loadAccountFromChain]);
 
   useEffect(() => {
     if (!playerAddressesKey) return undefined;
@@ -250,9 +268,6 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     setError('');
     setIsSavingProfile(true);
     try {
-      if (isSubscriptionActive) {
-        await syncProfileBlobToAccount(profileBlob);
-      }
       continueAfterProfile();
     } catch (err) {
       console.error('Account profile sync failed:', err);
@@ -260,7 +275,7 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     } finally {
       setIsSavingProfile(false);
     }
-  }, [continueAfterProfile, isSubscriptionActive, profile, profileBlob, syncProfileBlobToAccount]);
+  }, [continueAfterProfile, profile, profileBlob]);
 
   const handleProfileSave = useCallback(async () => {
     setError('');
@@ -273,10 +288,9 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     setIsSavingProfile(true);
     try {
       const blobHex = await buildAccountProfileBlob(profile, accountSession);
-      if (isSubscriptionActive && isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
+      if (hasOnchainAccount && isAddress(PRIVATE_POKER_CONTRACT_ADDRESS)) {
         await syncProfileBlobToAccount(blobHex);
       }
-      saveStoredAccountProfileBlob(accountSession.walletAddress, blobHex);
       setProfileBlob(blobHex);
       setProfileMode('view');
       continueAfterProfile();
@@ -286,7 +300,7 @@ export function useAccounts({ playerAddresses = [] } = {}) {
     } finally {
       setIsSavingProfile(false);
     }
-  }, [accountSession, continueAfterProfile, isSubscriptionActive, profile, syncProfileBlobToAccount]);
+  }, [accountSession, continueAfterProfile, hasOnchainAccount, profile, syncProfileBlobToAccount]);
 
   const getPlayerDisplayname = useCallback((playerAddress) => {
     const normalized = normalizeAddress(playerAddress);
@@ -374,9 +388,8 @@ export function useAccounts({ playerAddresses = [] } = {}) {
       });
       await publicPokerClient.waitForTransactionReceipt({ hash: subscribeHash });
 
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem('private-poker:subscription-tier', selectedTier.id);
-      }
+      setHasOnchainAccount(true);
+      setIsSubscriptionActive(true);
       router.push('/main-lobby');
     } catch (err) {
       console.error('Subscription failed:', err);
