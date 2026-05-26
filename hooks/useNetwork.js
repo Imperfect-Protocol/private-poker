@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAccountSession } from '@/contexts/AccountSessionContext.jsx';
 import { useListenForSignals, usePrivatePokerSignal } from '@/hooks/usePrivatePokerSignal';
 import { useRequireBLS } from '@/hooks/useRequireBLS';
+import { useRtcSessionPool } from '@/hooks/useRtcSessionPool';
 import { PokerRtcSession } from '@/lib/PokerRtcSession';
 
 const normalizeAddress = (value) => value?.toLowerCase() ?? '';
@@ -54,6 +55,7 @@ export function useNetwork({
   const { accountSession } = useAccountSession();
   const playerAddress = accountSession?.walletAddress;
   const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
+  const rtcSessionPool = useRtcSessionPool();
   const { blsKeys, generateKeys } = useRequireBLS(tableDetails);
   const publicKey = blsKeys?.publicKey;
   const privateKey = blsKeys?.privateKey;
@@ -80,6 +82,7 @@ export function useNetwork({
       sendSignal: () => {},
       onActivity: () => {},
       onStateChange: () => {},
+      sessionPool: rtcSessionPool,
     }),
   );
   const [networkSnapshot, setNetworkSnapshot] = useState(() => session.getSnapshot());

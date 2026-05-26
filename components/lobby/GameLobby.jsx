@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from 'react';
+import { useRtcSessionPool } from '@/hooks/useRtcSessionPool';
 
 // 1. EXTRACTED COMPONENT: Prevents unmounting/remounting on every parent render
 const TableRow = ({ table, highlight = false, isJoined= false }) => {
@@ -61,6 +62,7 @@ const TableRow = ({ table, highlight = false, isJoined= false }) => {
 };
 
 export default function GameLobby({ tables = [], lobbyId, lobbyName, gameType, userTables = [] }) {
+  useRtcSessionPool({ role: 'lobby' });
   const [searchQuery, setSearchQuery] = useState('');
 
   // 2. MEMOIZATION: Only recalculate arrays when data or search changes

@@ -13,6 +13,11 @@ const SIGNAL_ABI = parseAbi([
 ]);
 
 const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
+const formatPeer = (value) => {
+    const text = value ? String(value) : '';
+    if (!text) return 'unknown';
+    return text.length <= 12 ? text : `${text.slice(0, 6)}...${text.slice(-4)}`;
+};
 
 export function usePrivatePokerSignal({ onOperatorTopUp } = {}) {
     const { address } = useConnection();
@@ -41,15 +46,29 @@ export function usePrivatePokerSignal({ onOperatorTopUp } = {}) {
             recipients,
             encryptedData,
         ];
+        console.log('[RTC signal] send_signal submit', {
+            lobbyId: String(lobbyId),
+            tableId: String(tableId),
+            recipients: recipients.map(formatPeer),
+            payloads: encryptedData.length,
+            viaOperator: Boolean(operatorSigner?.operatorPrivateKey),
+        });
 
         if (operatorSigner?.operatorPrivateKey) {
-            return writeContractFromOperator({
+            const result = await writeContractFromOperator({
                 operatorPrivateKey: operatorSigner.operatorPrivateKey,
                 contract: SIGNAL_CONTRACT_ADDRESS,
                 abi: SIGNAL_ABI,
                 functionName: 'sendSignal',
                 args,
             });
+            console.log('[RTC signal] send_signal submitted via operator', {
+                lobbyId: String(lobbyId),
+                tableId: String(tableId),
+                recipients: recipients.map(formatPeer),
+                result,
+            });
+            return result;
         }
 
         const overrides = address
@@ -62,13 +81,20 @@ export function usePrivatePokerSignal({ onOperatorTopUp } = {}) {
             })
             : {};
 
-        return await mutateAsync({
+        const result = await mutateAsync({
             address: SIGNAL_CONTRACT_ADDRESS,
             abi: SIGNAL_ABI,
             functionName: 'sendSignal',
             args,
             ...overrides,
         });
+        console.log('[RTC signal] send_signal submitted', {
+            lobbyId: String(lobbyId),
+            tableId: String(tableId),
+            recipients: recipients.map(formatPeer),
+            result,
+        });
+        return result;
     }, [address, mutateAsync, writeContractFromOperator]);
 
     return { sendSignal, isSendingSignal: isPending };
@@ -94,6 +120,15 @@ export function useListenForSignals(myPlayerAddress, onSignalReceived) {
                 const isRecipient = recipients?.some(
                     (recipient) => recipient?.toLowerCase() === myPlayerAddress?.toLowerCase(),
                 );
+                console.log('[RTC signal] HandshakeSignal observed', {
+                    sender: formatPeer(sender),
+                    lobbyId: lobby_id?.toString(),
+                    tableId: table_id?.toString(),
+                    recipients: recipients?.map(formatPeer) ?? [],
+                    isRecipient,
+                    tx: log.transactionHash,
+                    index: log.logIndex,
+                });
 
                 if (!isRecipient) {
                     const logId = `${log.transactionHash}:${log.logIndex}:observed`;
@@ -113,7 +148,7 @@ export function useListenForSignals(myPlayerAddress, onSignalReceived) {
                         logId,
                         isRecipient: false,
                     })).catch((error) => {
-                        console.debug('[RTC debug] signal callback failed', error);
+                        console.log('[RTC debug] signal callback failed', error);
                     });
                     return;
                 }
@@ -138,7 +173,7 @@ export function useListenForSignals(myPlayerAddress, onSignalReceived) {
                         logId,
                         isRecipient: true,
                     })).catch((error) => {
-                        console.debug('[RTC debug] signal callback failed', error);
+                        console.log('[RTC debug] signal callback failed', error);
                     });
                 });
             });

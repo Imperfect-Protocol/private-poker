@@ -53,7 +53,7 @@ export default function Avatar({
     audioRef.current.volume = 1;
     if (audioTracks.length > 0) {
       audioRef.current.play().catch((error) => {
-        console.debug('[RTC debug] remote audio playback blocked', error);
+        console.log('[RTC debug] remote audio playback blocked', error);
       });
     }
   }, [hasRemoteAudio, webcamStream]);
