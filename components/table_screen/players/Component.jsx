@@ -60,6 +60,9 @@ export default function TablePlayers({
   remoteWebcamStreams = {},
   isWebcamStarting = false,
   onToggleWebcam = null,
+  isAudioEnabled = false,
+  isAudioStarting = false,
+  onToggleAudio = null,
 }) {
   const seatedPlayers = getSeatedPlayers(tableData, currentPlayerAddress);
   const activeSeats = getSeatingArrangement(seatedPlayers.length);
@@ -112,6 +115,9 @@ export default function TablePlayers({
         webcamStream={isMe ? webcamStream : remoteWebcamStream}
         isWebcamStarting={isMe && isWebcamStarting}
         onToggleWebcam={isMe ? onToggleWebcam : null}
+        isAudioEnabled={isMe && isAudioEnabled}
+        isAudioStarting={isMe && isAudioStarting}
+        onToggleAudio={isMe ? onToggleAudio : null}
       />
     );
   });

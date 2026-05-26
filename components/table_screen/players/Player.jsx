@@ -17,6 +17,9 @@ export default function TablePlayer({
   webcamStream = null,
   isWebcamStarting = false,
   onToggleWebcam = null,
+  isAudioEnabled = false,
+  isAudioStarting = false,
+  onToggleAudio = null,
 }) {
   const cardSize = isMe ? 'lg' : 'md';
 
@@ -49,6 +52,9 @@ export default function TablePlayer({
           webcamStream={webcamStream}
           isWebcamStarting={isMe && isWebcamStarting}
           onToggleWebcam={isMe ? onToggleWebcam : null}
+          isAudioEnabled={isMe && isAudioEnabled}
+          isAudioStarting={isMe && isAudioStarting}
+          onToggleAudio={isMe ? onToggleAudio : null}
         />
 
         <div className={`mt-3 bg-slate-900/95 border px-4 py-1.5 rounded-lg shadow-xl min-w-[110px] backdrop-blur-sm text-center z-10 ${isEmptySeat ? 'border-slate-700/60' : 'border-teal-500/30'}`}>

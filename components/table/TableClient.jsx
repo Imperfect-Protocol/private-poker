@@ -7,6 +7,7 @@ import ActiveTableView from '@/components/table/ActiveTableView';
 import BuyInDialog from '@/components/table_screen/dialogs/BuyInDialog';
 import JoinTableFlowDialog from '@/components/table_screen/dialogs/JoinTableFlowDialog';
 import ReJoinTableFlowDialog from '@/components/table_screen/dialogs/ReJoinTableFlowDialog';
+import MediaDataChannelDialog from '@/components/table_screen/dialogs/MediaDataChannelDialog';
 import TerminalResultDialog from '@/components/table_screen/dialogs/TerminalResultDialog';
 import TopUpOperatorGasDialog from '@/components/table_screen/dialogs/TopUpOperatorGasDialog';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -81,6 +82,7 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   const [reJoinDismissed, setReJoinDismissed] = useState(false);
   const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [topUpRequest, setTopUpRequest] = useState(null);
+  const [showMediaDataChannelDialog, setShowMediaDataChannelDialog] = useState(false);
   const webcam = useWebcam();
 
   const addDebugMessage = useCallback((message) => {
@@ -88,6 +90,10 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
   }, []);
 
   const handleRtcActivity = useCallback((activity) => {
+    if (activity.details?.kind === 'media-data-channel-required') {
+      setShowMediaDataChannelDialog(true);
+    }
+
     if (!activity.display) return;
 
     addDebugMessage({
@@ -408,6 +414,12 @@ export default function TableClient({ tableId, lobbyId, initialTableData = null,
           operator={topUpRequest.operator}
           requiredAmount={topUpRequest.requiredAmount}
           onConfirm={topUpRequest.resolve}
+        />
+      )}
+
+      {showMediaDataChannelDialog && (
+        <MediaDataChannelDialog
+          onClose={() => setShowMediaDataChannelDialog(false)}
         />
       )}
 

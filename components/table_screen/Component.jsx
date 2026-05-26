@@ -172,6 +172,9 @@ export default function TableScreen({
             remoteWebcamStreams={webcam?.remoteStreams ?? {}}
             isWebcamStarting={Boolean(webcam?.isStarting)}
             onToggleWebcam={webcam?.toggle ?? null}
+            isAudioEnabled={Boolean(webcam?.isAudioEnabled)}
+            isAudioStarting={Boolean(webcam?.isAudioStarting)}
+            onToggleAudio={webcam?.toggleAudio ?? null}
           />
 
           {gameState?.payout && (
