@@ -62,7 +62,7 @@ export function useNetwork({
 } = {}) {
   const { accountSession } = useAccountSession();
   const playerAddress = accountSession?.walletAddress;
-  const { sendSignal } = usePrivatePokerSignal({ onOperatorTopUp });
+  const { sendSignal } = usePrivatePokerSignal({ playerAddress });
   const rtcSessionPool = useRtcSessionPool();
   const controlActions = useActionQueue('network-control');
   const { blsKeys, generateKeys, generateHandKeys } = useRequireBLS(tableDetails);
@@ -224,7 +224,7 @@ export function useNetwork({
     tableId,
   ]);
 
-  useListenForSignals(playerAddress, async (signalData) => {
+  useListenForSignals(playerAddress, lobbyId, tableId, async (signalData) => {
     console.log('handleSignal', signalData);
     await controlActions.enqueueAction('RTC signal', async () => {
       await session.handleSignal(signalData);

@@ -1,182 +1,133 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useConnection, useWriteContract } from 'wagmi';
-import { isAddress, parseAbi } from 'viem';
-import { SIGNAL_CONTRACT_ADDRESS } from '@/lib/chain';
-import { getBufferedGasOverrides } from '@/lib/gas';
-import { publicPokerClient } from '@/lib/publicPokerClient';
-import { useOperatorAddress } from '@/hooks/useOperatorAddress';
-import { usePublicContractEvent } from '@/hooks/usePublicContractEvent';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useConnection } from 'wagmi';
+import {
+  getPrivateMeshUrl,
+  pollPrivateMeshSignals,
+  publishPrivateMeshSignals,
+  subscribeToPrivateMeshSignals,
+} from '@/lib/privateMeshSignal';
 
-const SIGNAL_ABI = parseAbi([
-    "function sendSignal(uint256 lobby_id, uint256 table_id, address[] recipients, bytes[] encrypted_data)",
-    "event HandshakeSignal(address sender, uint256 lobby_id, uint256 table_id, address[] recipients, bytes[] encrypted_data)"
-]);
+const normalizeAddress = (value) => value?.toLowerCase() ?? '';
 
-const hasSignalContract = isAddress(SIGNAL_CONTRACT_ADDRESS);
 const formatPeer = (value) => {
-    const text = value ? String(value) : '';
-    if (!text) return 'unknown';
-    return text.length <= 12 ? text : `${text.slice(0, 6)}...${text.slice(-4)}`;
+  const text = value ? String(value) : '';
+  if (!text) return 'unknown';
+  return text.length <= 12 ? text : `${text.slice(0, 6)}...${text.slice(-4)}`;
 };
 
-export function usePrivatePokerSignal({ onOperatorTopUp } = {}) {
-    const { address } = useConnection();
-    const { mutateAsync, isPending } = useWriteContract();
-    const { writeContractFromOperator } = useOperatorAddress({ onOperatorTopUp });
-
-    const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes, operatorSigner = undefined) => {
-        if (!hasSignalContract) {
-            throw new Error("PrivatePokerSignal contract address is not configured.");
-        }
-
-        const recipients = Array.isArray(recipientAddresses)
-            ? recipientAddresses
-            : [recipientAddresses];
-        const encryptedData = Array.isArray(encryptedDataBytes)
-            ? encryptedDataBytes
-            : [encryptedDataBytes];
-
-        if (recipients.length !== encryptedData.length) {
-            throw new Error("Signal recipient and payload counts must match.");
-        }
-
-        const args = [
-            BigInt(lobbyId),
-            BigInt(tableId),
-            recipients,
-            encryptedData,
-        ];
-        console.log('[RTC signal] send_signal submit', {
-            lobbyId: String(lobbyId),
-            tableId: String(tableId),
-            recipients: recipients.map(formatPeer),
-            payloads: encryptedData.length,
-            viaOperator: Boolean(operatorSigner?.operatorPrivateKey),
-        });
-
-        if (operatorSigner?.operatorPrivateKey) {
-            const result = await writeContractFromOperator({
-                operatorPrivateKey: operatorSigner.operatorPrivateKey,
-                contract: SIGNAL_CONTRACT_ADDRESS,
-                abi: SIGNAL_ABI,
-                functionName: 'sendSignal',
-                args,
-            });
-            console.log('[RTC signal] send_signal submitted via operator', {
-                lobbyId: String(lobbyId),
-                tableId: String(tableId),
-                recipients: recipients.map(formatPeer),
-                result,
-            });
-            return result;
-        }
-
-        const overrides = address
-            ? await getBufferedGasOverrides(publicPokerClient, {
-                address: SIGNAL_CONTRACT_ADDRESS,
-                abi: SIGNAL_ABI,
-                functionName: 'sendSignal',
-                args,
-                account: address,
-            })
-            : {};
-
-        const result = await mutateAsync({
-            address: SIGNAL_CONTRACT_ADDRESS,
-            abi: SIGNAL_ABI,
-            functionName: 'sendSignal',
-            args,
-            ...overrides,
-        });
-        console.log('[RTC signal] send_signal submitted', {
-            lobbyId: String(lobbyId),
-            tableId: String(tableId),
-            recipients: recipients.map(formatPeer),
-            result,
-        });
-        return result;
-    }, [address, mutateAsync, writeContractFromOperator]);
-
-    return { sendSignal, isSendingSignal: isPending };
+function asArray(value) {
+  return Array.isArray(value) ? value : [value];
 }
 
-export function useListenForSignals(myPlayerAddress, onSignalReceived) {
-    const onSignalReceivedRef = useRef(onSignalReceived);
-    const seenLogsRef = useRef(new Set());
+export function usePrivatePokerSignal({ playerAddress } = {}) {
+  const { address } = useConnection();
+  const senderAddress = playerAddress ?? address;
+  const [isSendingSignal, setIsSendingSignal] = useState(false);
 
-    useEffect(() => {
-        onSignalReceivedRef.current = onSignalReceived;
-    }, [onSignalReceived]);
+  const sendSignal = useCallback(async (lobbyId, tableId, recipientAddresses, encryptedDataBytes) => {
+    if (!senderAddress) {
+      throw new Error('Player address is required before publishing a Private Mesh signal.');
+    }
 
-    usePublicContractEvent({
-        address: SIGNAL_CONTRACT_ADDRESS,
-        abi: SIGNAL_ABI,
-        eventName: 'HandshakeSignal',
-        enabled: hasSignalContract && Boolean(myPlayerAddress),
-        onLogs: (logs) => {
-            logs.forEach((log) => {
-                const { sender, lobby_id, table_id, recipients, encrypted_data } = log.args;
+    const recipients = asArray(recipientAddresses);
+    const encryptedData = asArray(encryptedDataBytes);
 
-                const isRecipient = recipients?.some(
-                    (recipient) => recipient?.toLowerCase() === myPlayerAddress?.toLowerCase(),
-                );
-                console.log('[RTC signal] HandshakeSignal observed', {
-                    sender: formatPeer(sender),
-                    lobbyId: lobby_id?.toString(),
-                    tableId: table_id?.toString(),
-                    recipients: recipients?.map(formatPeer) ?? [],
-                    isRecipient,
-                    tx: log.transactionHash,
-                    index: log.logIndex,
-                });
+    if (recipients.length !== encryptedData.length) {
+      throw new Error('Signal recipient and payload counts must match.');
+    }
 
-                if (!isRecipient) {
-                    const logId = `${log.transactionHash}:${log.logIndex}:observed`;
-                    if (seenLogsRef.current.has(logId)) return;
-                    seenLogsRef.current.add(logId);
-                    if (seenLogsRef.current.size > 500) {
-                        const [oldestLogId] = seenLogsRef.current;
-                        seenLogsRef.current.delete(oldestLogId);
-                    }
+    const signals = recipients.map((recipient, index) => ({
+      recipient,
+      encryptedData: encryptedData[index],
+    }));
 
-                    Promise.resolve(onSignalReceivedRef.current?.({
-                        sender,
-                        lobbyId: lobby_id.toString(),
-                        tableId: table_id.toString(),
-                        recipients,
-                        encryptedData: undefined,
-                        logId,
-                        isRecipient: false,
-                    })).catch((error) => {
-                        console.log('[RTC debug] signal callback failed', error);
-                    });
-                    return;
-                }
-
-                recipients?.forEach((recipient, index) => {
-                    if (recipient?.toLowerCase() !== myPlayerAddress?.toLowerCase()) return;
-
-                    const logId = `${log.transactionHash}:${log.logIndex}:${index}`;
-                    if (seenLogsRef.current.has(logId)) return;
-                    seenLogsRef.current.add(logId);
-                    if (seenLogsRef.current.size > 500) {
-                        const [oldestLogId] = seenLogsRef.current;
-                        seenLogsRef.current.delete(oldestLogId);
-                    }
-
-                    Promise.resolve(onSignalReceivedRef.current?.({
-                        sender,
-                        lobbyId: lobby_id.toString(),
-                        tableId: table_id.toString(),
-                        recipients,
-                        encryptedData: encrypted_data[index],
-                        logId,
-                        isRecipient: true,
-                    })).catch((error) => {
-                        console.log('[RTC debug] signal callback failed', error);
-                    });
-                });
-            });
-        },
+    console.log('[RTC signal] Private Mesh publish', {
+      meshUrl: getPrivateMeshUrl(),
+      lobbyId: lobbyId?.toString?.() ?? String(lobbyId),
+      tableId: tableId?.toString?.() ?? String(tableId),
+      recipients: recipients.map(formatPeer),
+      payloads: encryptedData.length,
     });
+
+    setIsSendingSignal(true);
+    try {
+      return await publishPrivateMeshSignals(signals);
+    } finally {
+      setIsSendingSignal(false);
+    }
+  }, [senderAddress]);
+
+  return { sendSignal, isSendingSignal };
+}
+
+export function useListenForSignals(myPlayerAddress, lobbyId, tableId, onSignalReceived) {
+  const onSignalReceivedRef = useRef(onSignalReceived);
+  const seenSignalsRef = useRef(new Set());
+
+  useEffect(() => {
+    onSignalReceivedRef.current = onSignalReceived;
+  }, [onSignalReceived]);
+
+  useEffect(() => {
+    if (!myPlayerAddress || !lobbyId || !tableId) return undefined;
+
+    let stopped = false;
+    const address = normalizeAddress(myPlayerAddress);
+
+    const handleMeshSignal = (message) => {
+      if (stopped || !message?.payload) return;
+      const logId = message.id ?? `${message.sent_at}:${message.payload}`;
+      if (seenSignalsRef.current.has(logId)) return;
+      seenSignalsRef.current.add(logId);
+      if (seenSignalsRef.current.size > 500) {
+        const [oldestSignalId] = seenSignalsRef.current;
+        seenSignalsRef.current.delete(oldestSignalId);
+      }
+
+      console.log('[RTC signal] Private Mesh signal received', {
+        signalId: logId,
+        recipient: formatPeer(message.recipient),
+        bytes: Math.max(0, (String(message.signal ?? '').length - 2) / 2),
+      });
+
+      Promise.resolve(onSignalReceivedRef.current?.({
+        sender: null,
+        lobbyId: lobbyId.toString(),
+        tableId: tableId.toString(),
+        recipients: [address],
+        encryptedData: message.payload,
+        logId,
+        isRecipient: true,
+      })).catch((error) => {
+        console.log('[RTC debug] Private Mesh signal callback failed', error);
+      });
+    };
+
+    const unsubscribe = subscribeToPrivateMeshSignals(address, handleMeshSignal);
+    const pollController = new AbortController();
+    const poll = async () => {
+      try {
+        const messages = await pollPrivateMeshSignals(address, { signal: pollController.signal });
+        messages.forEach(handleMeshSignal);
+      } catch (error) {
+        if (!stopped && error?.name !== 'AbortError') {
+          console.log('[RTC signal] Private Mesh poll failed', error);
+        }
+      }
+    };
+    const pollTimer = setInterval(poll, 1000);
+    poll();
+
+    console.log('[RTC signal] Private Mesh ready', {
+      meshUrl: getPrivateMeshUrl(),
+      recipient: formatPeer(address),
+    });
+
+    return () => {
+      stopped = true;
+      unsubscribe?.();
+      pollController.abort();
+      clearInterval(pollTimer);
+    };
+  }, [lobbyId, myPlayerAddress, tableId]);
 }
